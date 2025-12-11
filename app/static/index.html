@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI 作业批改工具</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <div class="container">
+    <h1>AI 作业批改工具</h1>
+    <p class="subtitle">上传 Word 作业，配置模型信息，一键生成成绩表与异常清单。</p>
+
+    <section class="panel">
+      <h2>1. 上传作业文件（仅 .docx）</h2>
+      <input type="file" id="fileInput" multiple accept=".docx" />
+      <p id="fileInfo" class="hint">未选择文件</p>
+    </section>
+
+    <section class="panel">
+      <h2>2. 评分配置</h2>
+      <label>模型接口地址（API URL）<input type="text" id="apiUrl" placeholder="https://api.your-llm.com/v1/grade" /></label>
+      <label>API Key<input type="password" id="apiKey" placeholder="可选，示例：sk-xxx" /></label>
+      <label>模型名称<input type="text" id="modelName" placeholder="可选，示例：gpt-4" /></label>
+      <label>评分模版
+        <select id="template">
+          <option value="职业规划">职业规划作业</option>
+          <option value="调研报告">调研报告作业</option>
+          <option value="通用写作">通用写作</option>
+        </select>
+      </label>
+      <label class="checkbox">
+        <input type="checkbox" id="mockMode" /> 使用离线模拟评分（无真实模型时勾选）
+      </label>
+      <p class="hint">提示：配置会保存在浏览器本地，仅用于加速下次填写。</p>
+    </section>
+
+    <section class="panel">
+      <h2>3. 执行批改</h2>
+      <button id="startBtn">开始批改</button>
+      <p id="statusText" class="status">等待开始</p>
+      <div id="progress" class="progress hidden">
+        <div id="progressBar" class="progress-bar"></div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>4. 结果</h2>
+      <div id="summary" class="summary">
+        <p>暂无结果</p>
+      </div>
+      <div id="downloadLinks" class="downloads hidden">
+        <a id="resultLink" class="btn" href="#" download>下载成绩表</a>
+        <a id="errorLink" class="btn secondary" href="#" download>下载异常清单</a>
+      </div>
+    </section>
+  </div>
+  <script src="/static/script.js"></script>
+</body>
+</html>
