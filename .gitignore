@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
+.venv/
+.data/
+*.log
+.data
+.DS_Store
+
+# 应用数据目录
+/data/logs/
+/data/uploads/*
+!/data/uploads/.gitkeep
