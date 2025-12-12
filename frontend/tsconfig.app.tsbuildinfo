@@ -1,0 +1,1 @@
+{"root":["./src/app.vue","./src/main.ts","./src/api/client.ts","./src/api/types.ts","./src/components/prompteditor.vue","./src/components/settingspanel.vue","./src/components/workspacepanel.vue"],"version":"5.9.3"}

@@ -147,7 +147,38 @@
           ]
         }
       ]
+    },
+    "category_1765539950138": {
+      "display_name": "新作业类型",
+      "sections": [
+        {
+          "key": "新评分大项",
+          "max_score": 10,
+          "items": [
+            {
+              "key": "评分细则1awsd",
+              "max_score": 5,
+              "description": "请填写评分说明111wasd"
+            },
+            {
+              "key": "新增细则",
+              "max_score": 1111,
+              "description": "awsdawsd"
+            }
+          ]
+        },
+        {
+          "key": "新增评分大项",
+          "max_score": 10,
+          "items": [
+            {
+              "key": "评分细则awsdwasd",
+              "max_score": 5,
+              "description": "请填写评分说明awsdawsd"
+            }
+          ]
+        }
+      ]
     }
   }
 }
-

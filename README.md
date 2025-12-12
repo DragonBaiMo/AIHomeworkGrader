@@ -1,76 +1,68 @@
-# AI 作业批改 Web 工具
+# AI 作业批改前后端分离版
 
-本项目提供本地运行的 Python + FastAPI Web 服务，支持批量上传 `.docx` 作业、调用大模型生成分数与评语，并导出成绩表与异常清单。系统面向单机、单用户场景，强调“能用、清晰、易扩展”。
-
-## 功能概览
-
-- 多文件上传：一次选择多份 Word 作业，自动分批保存。
-- 内容解析：校验 docx 格式，解析正文文本并做长度检查。
-- 大模型评分：支持填写 API URL / API Key / 模型名称与评分模版，可切换离线模拟模式。
-- 结果导出：生成成绩表（grade_result.xlsx）与异常清单（error_list.xlsx）。
-- 页面体验：展示处理状态、批次统计，提供下载链接并记忆上次配置。
-
-## 环境与依赖
-
-- Python 3.11+
-- 主要依赖：FastAPI、Uvicorn、python-docx、openpyxl、httpx、pydantic、pytest
-- 完整依赖见 `requirements.txt`
-
-## 安装步骤
-
-1. 克隆或下载源码。
-2. 创建虚拟环境并安装依赖：
-   ```bash
-   python -m venv .venv
-   source .venv/bin/activate  # Windows 使用 .venv\\Scripts\\activate
-   pip install -r requirements.txt
-   ```
-3. 确认 `data/` 目录可写（程序启动时会自动创建）。
-
-## 启动与使用
-
-1. 启动后端服务：
-   ```bash
-   uvicorn app.main:app --host 0.0.0.0 --port 8000
-   ```
-2. 打开浏览器访问 [http://127.0.0.1:8000](http://127.0.0.1:8000)。
-3. 页面步骤：
-   - 选择一批 `.docx` 文件。
-   - 填写模型接口信息（或勾选“离线模拟评分”）。
-   - 选择评分模版，点击“开始批改”。
-   - 等待完成后下载“成绩表”和“异常清单”。
-
-### 接口说明
-
-- 健康检查：`GET /api/ping`
-- 触发批改：`POST /api/grade`
-  - form-data 字段：`files`（多文件）、`api_url`、`api_key`、`model_name`、`template`、`mock`
-- 下载结果：`GET /api/download/result/{batch_id}`
-- 下载异常：`GET /api/download/error/{batch_id}`
+基于 **FastAPI + Vue3** 的本地作业批改工具，支持批量上传 `.docx`、调用大模型评分并导出成绩表/异常清单。前端使用 Vite 打包后静态托管在后端，亦可独立开发调试。
 
 ## 目录结构
 
 ```
-app/
-  api/           # 接口路由
-  service/       # 业务服务与模型调用
-  util/          # 工具与日志
-  model/         # Pydantic 数据模型
-  static/        # 前端静态资源
-config/          # 配置与路径定义
-data/uploads/   # 批次文件与导出结果
+backend/              # Python 后端
+  app/                # FastAPI 业务代码
+  config/             # 配置、提示词 JSON/Markdown
+  data/               # 运行数据（上传文件、日志）
+  tests/              # 后端单测
+  requirements.txt    # 后端依赖
+frontend/             # Vue3 前端（Vite）
+  src/                # 业务代码与样式
+  vite.config.ts      # 打包到 backend/app/static
+  package.json        # 前端依赖
+.venv/                # Python 虚拟环境（脚本自动创建）
+start.bat             # 一键启动后端（含静态资源）
+reset-env.bat         # 重置 Python 虚拟环境并安装依赖
 ```
 
-## 测试
+## 快速开始
 
-```bash
-pytest
+1) 初始化后端环境（根目录执行）：
+```bat
+reset-env.bat
 ```
 
-## 版本记录
+2) 启动后端并托管已构建的前端（默认端口 18088）：
+```bat
+start.bat
+```
+访问 `http://localhost:18088` 查看页面，`/docs` 为 OpenAPI 文档。
 
-- v0.1.0：完成批量上传、docx 解析、模型调用封装、Excel 导出与前端页面。
+## 前端开发
 
-## 许可证
+```bat
+cd frontend
+npm install          # 首次安装依赖
+npm run dev -- --host  # 启动 Vite 开发服务器（端口 5173，已代理 /api -> 8000）
+npm run build          # 打包，产物输出到 backend/app/static
+```
 
-本项目采用 MIT License，详见仓库内 LICENSE 文件（若缺失请按需补充）。
+## 后端开发
+
+```bat
+cd backend
+..\ .venv\Scripts\python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 18088
+```
+
+- 健康检查：`GET /health` 或 `GET /api/ping`
+- 批改接口：`POST /api/grade`（表单字段：files、api_url、api_key、model_name、template、mock、skip_format_check）
+- 下载结果：`GET /api/download/result/{batch_id}`
+- 下载异常：`GET /api/download/error/{batch_id}`
+- 提示词配置：`GET/POST /api/prompt-config`
+
+## 数据与日志
+
+- 上传与导出文件位于 `backend/data/uploads`，默认会生成批次号目录。
+- 运行日志位于 `backend/data/logs/runtime.log`。
+- 默认提示词配置存放于 `backend/config/prompt_config.json`，保存后会同步生成 `prompts.md`。
+
+## 注意事项
+
+- 所有前后端文案、日志与注释均为中文，严禁中英夹杂。
+- 前端配置（接口地址、Key 等）保存在浏览器 `localStorage`，后端不持久化敏感信息。
+- 生产环境请自行添加身份验证与更严格的权限/输入校验。前端提供的「离线模拟模式」可在无模型接口时演示流程。  
