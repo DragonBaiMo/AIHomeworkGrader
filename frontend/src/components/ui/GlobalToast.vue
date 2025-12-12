@@ -5,18 +5,18 @@ const { toastState } = useUI();
 </script>
 
 <template>
-  <Transition name="toast-pop">
+  <Transition name="toast-spring">
     <div v-if="toastState.show" class="toast-wrapper">
       <div 
-        class="toast-pill" 
+        class="toast-capsule glass-morphism" 
         :class="toastState.type"
       >
-        <div class="toast-icon">
-          <svg v-if="toastState.type === 'success'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg>
-          <svg v-else-if="toastState.type === 'error'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-          <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+        <div class="toast-icon-box">
+          <svg v-if="toastState.type === 'success'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+          <svg v-else-if="toastState.type === 'error'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+          <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
         </div>
-        <span class="toast-text">{{ toastState.message }}</span>
+        <span class="toast-message">{{ toastState.message }}</span>
       </div>
     </div>
   </Transition>
@@ -25,37 +25,66 @@ const { toastState } = useUI();
 <style scoped>
 .toast-wrapper {
   position: fixed;
-  bottom: 32px;
+  bottom: 48px;
   left: 50%;
   transform: translateX(-50%);
-  z-index: 9999;
+  z-index: 10000;
   pointer-events: none;
-}
-
-.toast-pill {
   display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 20px;
-  border-radius: 99px;
-  background: var(--bg-panel);
-  border: 1px solid var(--border-light);
-  box-shadow: var(--shadow-float);
-  color: var(--txt-primary);
-  min-width: 300px;
   justify-content: center;
 }
 
-/* Variants */
-.toast-pill.success { border-color: var(--success); background: radial-gradient(circle at center, var(--success-bg), var(--bg-panel)); }
-.toast-pill.success .toast-icon { color: var(--success); }
+.toast-capsule {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 20px 12px 14px;
+  border-radius: 99px;
+  background: var(--bg-popover);
+  border: 1px solid var(--border-light);
+  box-shadow: 
+    0 10px 40px -10px rgba(0,0,0,0.3),
+    0 0 0 1px rgba(255,255,255,0.05) inset;
+  color: var(--txt-primary);
+  min-width: 300px;
+  max-width: 480px;
+  backdrop-filter: blur(20px);
+}
 
-.toast-pill.error { border-color: var(--error); background: radial-gradient(circle at center, var(--error-bg), var(--bg-panel)); }
-.toast-pill.error .toast-icon { color: var(--error); }
+.toast-icon-box {
+  display: flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
 
-.toast-text { font-size: 14px; font-weight: 500; }
+/* Status Colors */
+.toast-capsule.success .toast-icon-box {
+  background: var(--success); color: #fff;
+  box-shadow: 0 0 12px var(--success-bg);
+}
+.toast-capsule.error .toast-icon-box {
+  background: var(--error); color: #fff;
+  box-shadow: 0 0 12px var(--error-bg);
+}
+.toast-capsule.info .toast-icon-box {
+  background: var(--txt-tertiary); color: #fff;
+}
+
+.toast-message {
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.4;
+  letter-spacing: 0.01em;
+}
 
 /* Animation */
-.toast-pop-enter-active, .toast-pop-leave-active { transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
-.toast-pop-enter-from, .toast-pop-leave-to { opacity: 0; transform: translate(-50%, 20px) scale(0.9); }
+.toast-spring-enter-active, .toast-spring-leave-active {
+  transition: all 0.4s cubic-bezier(0.19, 1, 0.22, 1);
+}
+.toast-spring-enter-from, .toast-spring-leave-to {
+  opacity: 0;
+  transform: translateX(-50%) translateY(24px) scale(0.9);
+}
 </style>

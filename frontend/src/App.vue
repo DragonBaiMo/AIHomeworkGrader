@@ -170,69 +170,87 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="app-layout">
-    <!-- Sidebar / Rail -->
-    <nav class="glass nav-rail">
-      <div class="nav-top">
-        <div class="brand-logo" v-html="Icons.Logo"></div>
+  <div class="app-shell">
+    <!-- Navigation Rail -->
+    <nav class="nav-rail glass-morphism">
+      <div class="nav-section top">
+        <div class="brand-orb">
+          <div class="orb-core"></div>
+          <div class="orb-glow"></div>
+        </div>
       </div>
 
-      <div class="nav-middle">
+      <div class="nav-section middle">
         <button 
-          class="nav-btn" 
+          class="nav-item" 
           :class="{ active: activeTab === 'workspace' }"
           @click="activeTab = 'workspace'"
-          title="工作台"
+          v-tooltip="'工作台'"
         >
           <span class="icon" v-html="Icons.Workspace"></span>
         </button>
         
         <button 
-          class="nav-btn" 
+          class="nav-item" 
           :class="{ active: activeTab === 'rules' }"
           @click="activeTab = 'rules'"
-          title="评分规则"
+          v-tooltip="'规则编辑器'"
         >
           <span class="icon" v-html="Icons.Rules"></span>
         </button>
         
         <button 
-          class="nav-btn" 
+          class="nav-item" 
           :class="{ active: activeTab === 'settings' }"
           @click="activeTab = 'settings'"
-          title="设置"
+          v-tooltip="'系统设置'"
         >
           <span class="icon" v-html="Icons.Settings"></span>
         </button>
       </div>
 
-      <div class="nav-bottom">
-        <button class="nav-btn theme-toggle" @click="toggleTheme">
-          <span class="icon" v-if="theme === 'dark'" v-html="Icons.Moon"></span>
-          <span class="icon" v-else v-html="Icons.Sun"></span>
-        </button>
-        
-        <div class="status-dot" :class="{ 'busy': loading, 'error': statusText === '异常' }"></div>
+      <div class="nav-section bottom">
+        <div class="system-pill">
+          <button class="theme-btn" @click="toggleTheme">
+            <span class="icon" v-if="theme === 'dark'" v-html="Icons.Moon"></span>
+            <span class="icon" v-else v-html="Icons.Sun"></span>
+          </button>
+          <div class="divider"></div>
+          <div class="status-indicator" :class="{ 'is-busy': loading, 'is-error': statusText === '异常' }">
+            <div class="dot"></div>
+          </div>
+        </div>
       </div>
     </nav>
 
-    <!-- Content Area -->
+    <!-- Main Viewport -->
     <main class="main-viewport">
-      <div class="viewport-inner">
-        <Transition name="fade-scale" mode="out-in">
+      <div class="viewport-content custom-scrollbar">
+        <Transition name="page-transition" mode="out-in">
           <KeepAlive include="WorkspacePanel">
-            <component 
-              :is="activeTab === 'workspace' ? WorkspacePanel : activeTab === 'settings' ? SettingsPanel : PromptEditor"
-              :config="activeTab === 'rules' ? promptConfig : config"
+            <WorkspacePanel 
+              v-if="activeTab === 'workspace'"
+              :config="config"
               :templates="templateOptions"
-              :loading="loading || promptLoading"
+              :loading="loading"
               :result="result"
               :status-text="statusText"
-              :saving="promptSaving"
-              :error="promptError"
               @submit="handleGrade"
               @request-settings="activeTab = 'settings'"
               @update:config="updateConfig"
+            />
+            <SettingsPanel 
+              v-else-if="activeTab === 'settings'"
+              :config="config"
+              @update:config="updateConfig"
+              @submit="activeTab = 'workspace'"
+            />
+            <PromptEditor 
+              v-else
+              :config="promptConfig"
+              :loading="promptLoading"
+              :saving="promptSaving"
+              :error="promptError"
               @refresh="loadPromptConfig"
               @save="handleSavePrompt"
             />
@@ -247,157 +265,188 @@ onMounted(() => {
 </template>
 
 <style scoped>
-/* Layout Grid */
-.app-layout {
+/* --- App Shell --- */
+.app-shell {
   display: flex;
   height: 100vh;
   width: 100vw;
   background-color: var(--bg-app);
   overflow: hidden;
+  position: relative;
 }
 
-/* --- Nav Rail --- */
+/* --- Navigation Rail --- */
 .nav-rail {
-  width: 72px;
+  width: 80px;
   height: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: space-between;
   padding: 32px 0;
   border-right: 1px solid var(--border-dim);
   z-index: 50;
   flex-shrink: 0;
+  background: var(--bg-panel); /* Fallback */
 }
 
-.nav-top { margin-bottom: 40px; }
-.brand-logo { 
-  color: var(--brand); 
-  filter: drop-shadow(0 0 12px var(--brand-glow));
-  animation: float 6s ease-in-out infinite;
-}
-
-.nav-middle {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  width: 100%;
-  align-items: center;
-}
-
-.nav-btn {
-  width: 44px;
-  height: 44px;
-  border-radius: var(--radius-m);
-  background: transparent;
-  border: none;
-  color: var(--txt-tertiary);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.3s var(--ease-spring);
-  position: relative;
-}
-
-.nav-btn:hover {
-  background: var(--bg-hover);
-  color: var(--txt-secondary);
-  transform: scale(1.05);
-}
-
-.nav-btn.active {
-  background: var(--bg-active);
-  color: var(--brand);
-  box-shadow: inset 0 0 0 1px var(--border-light);
-}
-
-/* Active Indicator */
-.nav-btn.active::before {
-  content: '';
-  position: absolute;
-  left: -14px;
-  width: 4px;
-  height: 20px;
-  background: var(--brand);
-  border-radius: 0 4px 4px 0;
-  box-shadow: 0 0 12px var(--brand);
-}
-
-.nav-bottom {
+.nav-section {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 24px;
+  width: 100%;
 }
 
-.status-dot {
+/* Brand Orb */
+.brand-orb {
+  position: relative;
+  width: 40px; height: 40px;
+  display: flex; align-items: center; justify-content: center;
+}
+.orb-core {
+  width: 12px; height: 12px; border-radius: 50%;
+  background: var(--brand);
+  z-index: 2;
+  box-shadow: 0 0 20px var(--brand);
+}
+.orb-glow {
+  position: absolute; inset: 0;
+  border-radius: 50%;
+  border: 1px solid var(--border-light);
+  opacity: 0.5;
+  animation: breathe 4s ease-in-out infinite;
+}
+@keyframes breathe {
+  0%, 100% { transform: scale(0.8); opacity: 0.3; }
+  50% { transform: scale(1.1); opacity: 0.6; border-color: var(--brand-dim); }
+}
+
+/* Nav Items */
+.nav-item {
+  position: relative;
+  width: 48px; height: 48px;
+  border-radius: 14px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--txt-tertiary);
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: all 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+}
+.nav-item:hover {
+  background: var(--bg-hover);
+  color: var(--txt-secondary);
+  transform: scale(1.05);
+}
+.nav-item.active {
+  background: var(--bg-active);
+  color: var(--brand);
+  border-color: var(--border-dim);
+  box-shadow: 
+    0 4px 12px -2px rgba(0,0,0,0.1), 
+    inset 0 0 0 1px rgba(255,255,255,0.05);
+}
+.nav-item.active::after {
+  content: ''; position: absolute;
+  left: -17px; top: 12px; bottom: 12px; width: 3px;
+  background: var(--brand);
+  border-radius: 0 4px 4px 0;
+  box-shadow: 0 0 10px var(--brand);
+}
+
+/* System Pill */
+.system-pill {
+  display: flex; flex-direction: column; align-items: center; gap: 12px;
+  padding: 12px 8px;
+  background: var(--bg-active);
+  border-radius: 20px;
+  border: 1px solid var(--border-dim);
+}
+.theme-btn {
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  border: none; background: transparent;
+  color: var(--txt-secondary);
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: all 0.2s;
+}
+.theme-btn:hover { background: var(--bg-hover); color: var(--txt-primary); }
+
+.divider { width: 24px; height: 1px; background: var(--border-dim); }
+
+.status-indicator {
+  width: 32px; height: 32px;
+  display: flex; align-items: center; justify-content: center;
+}
+.dot {
   width: 8px; height: 8px; border-radius: 50%;
   background: var(--success);
   box-shadow: 0 0 8px var(--success-bg);
   transition: all 0.3s;
 }
-.status-dot.busy {
+.status-indicator.is-busy .dot {
   background: var(--brand);
   box-shadow: 0 0 12px var(--brand-glow);
-  animation: pulse 1.5s infinite;
+  animation: pulse-dot 1s infinite;
 }
-.status-dot.error { background: var(--error); box-shadow: 0 0 12px var(--error-bg); }
+.status-indicator.is-error .dot {
+  background: var(--error);
+  box-shadow: 0 0 12px var(--error-bg);
+}
+@keyframes pulse-dot {
+  0% { transform: scale(0.8); opacity: 0.6; }
+  50% { transform: scale(1.2); opacity: 1; }
+  100% { transform: scale(0.8); opacity: 0.6; }
+}
 
-/* --- Main Viewport --- */
+/* --- Viewport --- */
 .main-viewport {
   flex: 1;
   position: relative;
   overflow: hidden;
-  /* 这里的 padding 配合 content-container 形成悬浮感 */
-  padding: 16px; 
+  background: radial-gradient(circle at top left, var(--bg-panel) 0%, var(--bg-app) 40%);
 }
 
-.viewport-inner {
-  width: 100%;
-  height: 100%;
-  border-radius: var(--radius-l);
-  /* 内层不设背景，让组件自己画卡片，或者统一在这里画一个大卡片背景 */
+.viewport-content {
+  width: 100%; height: 100%;
+  padding: 40px;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 24px;
-  scroll-behavior: smooth;
 }
 
-/* 适配移动端 */
+/* Transitions */
+.page-transition-enter-active,
+.page-transition-leave-active {
+  transition: opacity 0.3s var(--ease-out), transform 0.3s var(--ease-spring);
+}
+.page-transition-enter-from {
+  opacity: 0;
+  transform: scale(0.98) translateY(10px);
+}
+.page-transition-leave-to {
+  opacity: 0;
+  transform: scale(1.02);
+}
+
+/* Mobile */
 @media (max-width: 768px) {
-  .app-layout { flex-direction: column-reverse; }
+  .app-shell { flex-direction: column-reverse; }
   .nav-rail {
-    width: 100%; height: 64px; flex-direction: row;
+    width: 100%; height: 72px; flex-direction: row;
     padding: 0 24px; border-right: none; border-top: 1px solid var(--border-dim);
-    justify-content: space-between;
   }
-  .nav-top, .brand-logo { display: none; }
-  .nav-middle { flex-direction: row; height: 100%; justify-content: center; gap: 32px; }
-  .nav-btn.active::before {
-    left: 50%; top: -14px; transform: translateX(-50%);
-    width: 20px; height: 4px; border-radius: 0 0 4px 4px;
+  .nav-section.top { display: none; }
+  .nav-section.middle { flex-direction: row; justify-content: center; gap: 32px; }
+  .nav-item.active::after {
+    left: 50%; top: auto; bottom: -18px; width: 24px; height: 3px;
+    transform: translateX(-50%); border-radius: 4px 4px 0 0;
   }
-  .nav-bottom { flex-direction: row; gap: 16px; margin-left: 0; }
+  .nav-section.bottom { width: auto; }
+  .system-pill { flex-direction: row; padding: 4px 12px; }
+  .divider { width: 1px; height: 16px; }
   
-  .main-viewport { padding: 0; }
-  .viewport-inner { border-radius: 0; padding: 16px; }
+  .viewport-content { padding: 20px; }
 }
-
-/* Animations */
-@keyframes float {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-4px); }
-}
-@keyframes pulse {
-  0% { transform: scale(1); opacity: 1; }
-  50% { transform: scale(1.4); opacity: 0.5; }
-  100% { transform: scale(1); opacity: 1; }
-}
-
-.fade-scale-enter-active, .fade-scale-leave-active {
-  transition: opacity 0.4s var(--ease-out), transform 0.4s var(--ease-spring);
-}
-.fade-scale-enter-from { opacity: 0; transform: scale(0.98) translateY(10px); }
-.fade-scale-leave-to { opacity: 0; transform: scale(1.02); }
 </style>
