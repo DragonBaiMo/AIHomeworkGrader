@@ -392,12 +392,14 @@ async function refreshPreview() {
                 <div class="block-content" v-show="!collapsedModules.has(sIdx)">
                   <div class="items-list">
                     <div v-for="(item, iIdx) in section.items" :key="iIdx" class="item-card">
-                       <div class="item-header">
-                          <div class="item-title-row" @click="toggleItem(sIdx, iIdx)">
+                       <div class="item-header" @click="toggleItem(sIdx, iIdx)">
+                          <div class="item-title-row">
                              <span class="item-chevron" :class="{ open: isItemExpanded(sIdx, iIdx) }" v-html="Icons.ChevronRight"></span>
-                             <input type="text" v-model="item.key" class="invisible-input item-input" placeholder="评分点" @click.stop />
+                             <div class="input-wrapper" @click.stop>
+                               <input type="text" v-model="item.key" class="invisible-input item-input" placeholder="评分点" />
+                             </div>
                           </div>
-                          <div class="item-meta">
+                          <div class="item-meta" @click.stop>
                              <input type="number" v-model.number="item.max_score" class="score-input-mini" />
                              <button class="mini-btn" @click="removeItem(section, iIdx)"><span v-html="Icons.Trash"></span></button>
                           </div>
@@ -408,6 +410,7 @@ async function refreshPreview() {
                            v-model="item.description" 
                            class="desc-textarea" 
                            placeholder="详细的评分标准描述..."
+                           @click.stop
                          ></textarea>
                        </div>
                     </div>

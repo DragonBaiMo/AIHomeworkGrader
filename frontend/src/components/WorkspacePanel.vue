@@ -68,6 +68,30 @@ const filteredItems = computed(() => {
   });
 });
 
+const parsedFilteredItems = computed(() => {
+  return filteredItems.value.map((item) => {
+    let detail: any = {};
+    try {
+      detail = item.detail_json ? JSON.parse(item.detail_json) : {};
+    } catch (e) { /* ignore */ }
+    
+    return {
+      ...item,
+      rubric_items: detail.rubric_items || [],
+      feedback: detail.feedback || item.comment || "",
+      error_message: item.error_message || detail.error,
+      display_score: typeof detail.total_score === 'number' ? detail.total_score : item.score
+    };
+  });
+});
+
+function getScoreClass(score: number | null | undefined) {
+  if (score === null || score === undefined) return "";
+  if (score >= 90) return "score-high";
+  if (score >= 60) return "score-mid";
+  return "score-low";
+}
+
 function toggleRow(key: string) {
   const set = expandedRows.value;
   if (set.has(key)) set.delete(key);
@@ -246,7 +270,7 @@ function updateConfigField<T extends keyof GradeConfigPayload>(key: T, value: Gr
           </div>
           <div class="bento-card stat-avg">
             <span class="bento-label">平均分</span>
-            <span class="bento-value">{{ result.average_score.toFixed(1) }}</span>
+            <span class="bento-value">{{ result.average_score ? result.average_score.toFixed(1) : '-' }}</span>
           </div>
           <div class="bento-card action-cell">
              <div class="action-stack">
@@ -297,7 +321,7 @@ function updateConfigField<T extends keyof GradeConfigPayload>(key: T, value: Gr
             <!-- List Items -->
             <div class="table-rows">
               <div 
-                v-for="item in filteredItems" 
+                v-for="item in parsedFilteredItems" 
                 :key="item.file_name"
                 class="row-group"
                 :class="{ expanded: expandedRows.has(item.file_name) }"
@@ -310,9 +334,11 @@ function updateConfigField<T extends keyof GradeConfigPayload>(key: T, value: Gr
                   <div class="td col-id">{{ item.student_id || '-' }}</div>
                   <div class="td col-name">{{ item.student_name || '-' }}</div>
                   <div class="td col-score">
-                    <span class="score-badge" :class="getScoreClass(item.total_score)">
-                      {{ item.total_score ?? '-' }}
-                    </span>
+                    <div class="score-pill" :class="getScoreClass(item.display_score)">
+                      <span class="status-dot" :class="getScoreClass(item.display_score) === 'score-high' ? 'ok' : getScoreClass(item.display_score) === 'score-low' ? 'err' : 'warn'"></span>
+                      <span class="score-val">{{ item.display_score ?? '-' }}</span>
+                      <span class="score-max" v-if="item.display_score !== null">/100</span>
+                    </div>
                   </div>
                   <div class="td col-status">
                     <span class="status-dot" :class="item.status === '成功' ? 'ok' : 'err'"></span>
@@ -359,7 +385,7 @@ function updateConfigField<T extends keyof GradeConfigPayload>(key: T, value: Gr
               </div>
               
               <!-- Empty State -->
-              <div v-if="filteredItems.length === 0" class="empty-list">
+              <div v-if="parsedFilteredItems.length === 0" class="empty-list">
                 <span class="empty-text">没有找到相关记录</span>
               </div>
             </div>
@@ -383,6 +409,7 @@ function updateConfigField<T extends keyof GradeConfigPayload>(key: T, value: Gr
   color: var(--txt-primary);
   /* 隐形纹理背景 */
   background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.03'/%3E%3C/svg%3E");
+  isolation: isolate;
 }
 
 /* --- Header: Command Center --- */
@@ -884,15 +911,29 @@ input:checked ~ .switch-track .switch-thumb { transform: translateX(16px); }
 .file-type-icon { color: var(--brand); opacity: 0.8; }
 .text-truncate { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 90%; }
 
-.col-score { font-family: 'JetBrains Mono', monospace; font-weight: 600; }
-.score-badge { 
-  display: inline-block; 
-  min-width: 32px; 
-  text-align: right; 
+.col-score { 
+  font-family: 'JetBrains Mono', monospace; 
+  font-weight: 600; 
+  justify-content: flex-end;
+  padding-right: 24px;
 }
-.score-high { color: var(--success); }
-.score-mid { color: var(--warning); }
-.score-low { color: var(--error); }
+.score-pill { 
+  display: inline-flex; 
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  border-radius: 99px;
+  background: var(--bg-app);
+  border: 1px solid var(--border-dim);
+  min-width: 64px;
+  justify-content: center;
+}
+.score-pill.high { border-color: var(--success); color: var(--success); background: var(--success-bg); }
+.score-pill.mid { border-color: var(--warning); color: var(--warning); background: var(--warning-bg); }
+.score-pill.low { border-color: var(--error); color: var(--error); background: var(--error-bg); }
+
+.score-val { font-size: 14px; }
+.score-max { font-size: 11px; opacity: 0.6; margin-left: 2px; }
 
 .status-dot { width: 6px; height: 6px; border-radius: 50%; margin-right: 8px; }
 .status-dot.ok { background: var(--success); box-shadow: 0 0 6px var(--success-bg); }
