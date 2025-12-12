@@ -28,16 +28,16 @@ const previewScoreTargetMax = ref<number>(60);
 const previewSystemPrompt = ref("");
 const previewUserPrompt = ref("");
 const previewRubricMax = ref<number | null>(null);
-const SCORE_STORAGE_KEY = "ai-grader-pro-config";
 
 const Icons = {
-  Plus: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>`,
-  Trash: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>`,
-  Chevron: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>`,
-  Refresh: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"></path><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>`,
-  Save: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>`,
-  Code: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>`,
-  Edit: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>`
+  Plus: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>`,
+  Trash: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>`,
+  ChevronRight: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>`,
+  Refresh: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"></path><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>`,
+  Save: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>`,
+  Eye: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>`,
+  Folder: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>`,
+  FileCode: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>`
 };
 
 watch(
@@ -53,8 +53,6 @@ watch(
     if (!currentKey.value || !keys.includes(currentKey.value)) {
       currentKey.value = keys[0] ?? "";
     }
-    collapsedModules.clear();
-    expandedItems.clear();
   },
   { deep: true, immediate: true },
 );
@@ -92,23 +90,21 @@ function removeCategory(key: string) {
     showToast("至少保留一个分类", "warning");
     return;
   }
-  
   confirm({
-    title: "删除分类",
-    content: "确定要彻底删除此分类及其所有规则吗？此操作不可恢复。",
-    confirmText: "确认删除",
+    title: "确认删除",
+    content: "确定要彻底删除此分类及其所有规则吗？",
+    confirmText: "删除",
     type: "danger",
     onConfirm: () => {
       if (!editable.value) return;
       delete editable.value.categories[key];
       if (currentKey.value === key) currentKey.value = Object.keys(editable.value.categories)[0];
-      showToast("分类已删除", "success");
     }
   });
 }
 
 function addSection() {
-  currentCategory.value?.sections.push({ key: "维度名称", max_score: 10, items: [] });
+  currentCategory.value?.sections.push({ key: "新维度", max_score: 10, items: [] });
 }
 function removeSection(idx: number) { currentCategory.value?.sections.splice(idx, 1); }
 
@@ -118,18 +114,14 @@ function addItem(section: PromptSection, mIdx: number) {
 }
 function removeItem(section: PromptSection, idx: number) { section.items.splice(idx, 1); }
 
-// --- Logic: Auto-calculate Score ---
 function getSectionTotal(section: PromptSection) {
   return section.items.reduce((sum, item) => sum + (Number(item.max_score) || 0), 0);
 }
 
 function handleSave() {
   if (!editable.value) return;
-  // Auto-calculate section scores before saving
   Object.values(editable.value.categories).forEach(cat => {
-    cat.sections.forEach(sec => {
-      sec.max_score = getSectionTotal(sec);
-    });
+    cat.sections.forEach(sec => sec.max_score = getSectionTotal(sec));
   });
   emit("save", JSON.parse(JSON.stringify(editable.value)));
 }
@@ -139,22 +131,10 @@ async function refreshPreview() {
   previewLoading.value = true;
   previewError.value = "";
   try {
-    if (previewScoreTargetMax.value === 60) {
-      try {
-        const cache = localStorage.getItem(SCORE_STORAGE_KEY);
-        if (cache) {
-          const saved = JSON.parse(cache) as { scoreTargetMax?: number };
-          if (typeof saved.scoreTargetMax === "number" && saved.scoreTargetMax > 0) {
-            previewScoreTargetMax.value = saved.scoreTargetMax;
-          }
-        }
-      } catch { /* ignore */ }
-    }
     const resp = await fetchPromptPreview(editable.value, currentKey.value, previewScoreTargetMax.value);
     previewSystemPrompt.value = resp.system_prompt || "";
     previewUserPrompt.value = resp.user_prompt || "";
     previewRubricMax.value = typeof resp.score_rubric_max === "number" ? resp.score_rubric_max : null;
-    showToast("提示词预览已更新", "success");
   } catch (err) {
     previewError.value = (err as Error).message;
   } finally {
@@ -164,190 +144,156 @@ async function refreshPreview() {
 </script>
 
 <template>
-  <div class="editor-shell animate-in">
-    <!-- Top Bar -->
-    <header class="editor-bar">
-      <div class="bar-left">
-        <span class="icon" v-html="Icons.Code"></span>
-        <span class="bar-title">评分规则引擎</span>
+  <div class="ide-layout animate-in">
+    <!-- Toolbar -->
+    <header class="ide-toolbar glass">
+      <div class="toolbar-left">
+        <span class="icon-box" v-html="Icons.FileCode"></span>
+        <span class="toolbar-title">规则编辑器</span>
       </div>
-      <div class="bar-right">
-        <button class="btn ghost small icon-only" @click="emit('refresh')" title="放弃修改">
+      <div class="toolbar-right">
+        <button class="btn ghost small icon-only" @click="emit('refresh')" title="重置">
           <span v-html="Icons.Refresh"></span>
         </button>
-        <button class="btn primary small" :disabled="saving || !editable" @click="handleSave">
-          <span class="icon-text-desktop" v-html="Icons.Save"></span>
-          <span class="btn-text">{{ saving ? "..." : "保存" }}</span>
+        <button class="btn ghost small" :class="{ active: previewOpen }" @click="previewOpen = !previewOpen; if(previewOpen) refreshPreview();">
+          <span v-html="Icons.Eye"></span> 预览
         </button>
-        <button class="btn ghost small" :disabled="!editable" @click="previewOpen = !previewOpen; if (previewOpen) refreshPreview();">
-          <span class="icon-text-desktop" v-html="Icons.Code"></span>
-          <span class="btn-text">预览</span>
+        <button class="btn primary small" :disabled="saving || !editable" @click="handleSave">
+          <span v-html="Icons.Save"></span> {{ saving ? "保存中..." : "保存" }}
         </button>
       </div>
     </header>
 
-    <div v-if="error" class="error-banner">{{ error }}</div>
-
-    <div v-if="editable" class="ide-container">
+    <div class="ide-body" v-if="editable">
       <!-- Sidebar -->
-      <aside class="sidebar-pane">
-        <div class="pane-header">
-          <span>分类列表</span>
-          <button class="icon-btn highlight" @click="addCategory" title="新增分类">
-            <span v-html="Icons.Plus"></span>
-          </button>
+      <aside class="ide-sidebar glass">
+        <div class="sidebar-header">
+          <span class="sidebar-title">分类 (Categories)</span>
+          <button class="icon-btn tiny" @click="addCategory"><span v-html="Icons.Plus"></span></button>
         </div>
-        <div class="file-list">
+        <div class="file-tree">
           <button
             v-for="(cat, key) in editable.categories"
             :key="key"
-            class="file-item"
+            class="tree-item"
             :class="{ active: currentKey === key }"
             @click="currentKey = String(key)"
           >
-            <span class="file-icon">#</span>
-            <span class="file-name">{{ cat.display_name || key }}</span>
+            <span class="tree-icon" v-html="Icons.Folder"></span>
+            <span class="tree-label">{{ cat.display_name || key }}</span>
           </button>
         </div>
       </aside>
 
-      <!-- Main Editor -->
-      <main class="editor-pane" v-if="currentCategory">
+      <!-- Editor -->
+      <main class="ide-surface" v-if="currentCategory">
         
-        <!-- Meta Info -->
-        <div class="config-header-card">
-          <div class="header-row">
-            <div class="field-group grow">
+        <div class="config-panel">
+          <div class="panel-row">
+            <div class="input-group grow">
               <label>分类名称</label>
-              <input type="text" v-model="currentCategory.display_name" class="code-input" />
+              <input type="text" v-model="currentCategory.display_name" class="ide-input" />
             </div>
-            <button class="icon-btn danger big" @click="removeCategory(currentKey)" title="删除此分类">
+            <button class="btn danger small icon-only" @click="removeCategory(currentKey)">
               <span v-html="Icons.Trash"></span>
             </button>
           </div>
-          <div class="field-group">
+          <div class="input-group">
             <label>AI 角色设定 (System Prompt)</label>
             <textarea
               v-model="editable.system_prompt"
-              rows="2"
-              class="code-input area"
-              placeholder="设定AI的评审角色..."
+              rows="3"
+              class="ide-input area"
+              placeholder="你是一位严格的计算机科学教授..."
             ></textarea>
           </div>
         </div>
 
-        <!-- Rules Stack -->
-        <div class="rules-stack">
-          <div class="stack-label">评分维度配置</div>
-          
-          <TransitionGroup name="list-anim">
-            <div 
-              v-for="(section, sIdx) in currentCategory.sections" 
-              :key="sIdx"
-              class="module-block"
-              :class="{ collapsed: collapsedModules.has(sIdx) }"
-            >
-              <!-- Module Header -->
-              <header class="module-head" @click="toggleModule(sIdx)">
-                <div class="head-left">
-                  <div class="chevron-box" :class="{ rotate: !collapsedModules.has(sIdx) }">
-                    <span v-html="Icons.Chevron"></span>
-                  </div>
-                  <input type="text" class="transparent-input title" v-model="section.key" placeholder="维度名称" @click.stop />
-                </div>
-                <div class="head-right" @click.stop>
-                  <span class="tag mobile-hide">总分</span>
-                  <!-- Read-only computed score -->
-                  <div class="score-badge">{{ getSectionTotal(section) }}</div>
-                  <span class="divider"></span>
-                  <button class="icon-btn danger" @click="removeSection(sIdx)" title="删除维度">
-                    <span v-html="Icons.Trash"></span>
-                  </button>
-                </div>
-              </header>
+        <div class="rules-canvas">
+          <div class="canvas-header">
+            <span class="canvas-title">评分维度 (Rubric)</span>
+            <button class="btn ghost small" @click="addSection"><span v-html="Icons.Plus"></span> 新增维度</button>
+          </div>
 
-              <!-- Items Container -->
-              <div v-show="!collapsedModules.has(sIdx)" class="items-wrapper">
-                <div class="items-grid">
-                  <div v-for="(item, iIdx) in section.items" :key="iIdx" class="item-card">
-                    
-                    <!-- Item Header: Key & Score -->
-                    <div class="item-head" @click="toggleItem(sIdx, iIdx)">
-                      <div class="item-head-left">
-                        <div class="tiny-chevron" :class="{ open: isItemExpanded(sIdx, iIdx) }">
-                          <span v-html="Icons.Chevron"></span>
+          <div class="blocks-container">
+            <TransitionGroup name="list-anim">
+              <div 
+                v-for="(section, sIdx) in currentCategory.sections" 
+                :key="sIdx"
+                class="rule-block"
+                :class="{ collapsed: collapsedModules.has(sIdx) }"
+              >
+                <div class="block-header" @click="toggleModule(sIdx)">
+                  <div class="header-left">
+                    <span class="chevron" :class="{ rot: !collapsedModules.has(sIdx) }" v-html="Icons.ChevronRight"></span>
+                    <input type="text" v-model="section.key" class="invisible-input title" placeholder="维度名称" @click.stop />
+                  </div>
+                  <div class="header-right">
+                    <span class="badge score">{{ getSectionTotal(section) }} pts</span>
+                    <button class="icon-btn tiny danger" @click.stop="removeSection(sIdx)"><span v-html="Icons.Trash"></span></button>
+                  </div>
+                </div>
+
+                <div class="block-body" v-show="!collapsedModules.has(sIdx)">
+                  <div class="sub-items">
+                    <div v-for="(item, iIdx) in section.items" :key="iIdx" class="sub-item">
+                      <div class="item-row">
+                        <div class="item-left" @click="toggleItem(sIdx, iIdx)">
+                          <span class="chevron tiny" :class="{ rot: isItemExpanded(sIdx, iIdx) }" v-html="Icons.ChevronRight"></span>
+                          <input type="text" v-model="item.key" class="invisible-input" placeholder="评分细则" @click.stop />
                         </div>
-                        <input type="text" v-model="item.key" class="item-key-input" placeholder="评分源 (如: 逻辑性)" @click.stop />
+                        <div class="item-right">
+                          <input type="number" v-model.number="item.max_score" class="score-input" />
+                          <button class="icon-btn tiny danger" @click="removeItem(section, iIdx)"><span v-html="Icons.Trash"></span></button>
+                        </div>
                       </div>
                       
-                      <div class="item-head-right" @click.stop>
-                         <span class="item-tag">分值</span>
-                         <input type="number" v-model.number="item.max_score" class="item-score-input" />
-                         <button class="icon-btn danger small" @click="removeItem(section, iIdx)">
-                           <span v-html="Icons.Trash"></span>
-                         </button>
+                      <div class="item-desc" v-show="isItemExpanded(sIdx, iIdx)">
+                        <textarea 
+                          v-model="item.description" 
+                          class="ide-input transparent" 
+                          placeholder="描述评分标准..."
+                        ></textarea>
                       </div>
                     </div>
-
-                    <!-- Item Body: Description (Collapsible) -->
-                    <div v-show="isItemExpanded(sIdx, iIdx)" class="item-body">
-                      <textarea 
-                        v-model="item.description" 
-                        class="desc-textarea" 
-                        placeholder="在此输入详细的评分标准描述..."
-                        rows="3"
-                      ></textarea>
-                    </div>
-
                   </div>
-
-                  <button class="add-item-btn" @click="addItem(section, sIdx)">
-                    <span class="icon-box" v-html="Icons.Plus"></span> 添加评分细则
+                  
+                  <button class="add-sub-btn" @click="addItem(section, sIdx)">
+                    <span v-html="Icons.Plus"></span> 添加细则
                   </button>
                 </div>
               </div>
-            </div>
-          </TransitionGroup>
-
-          <button class="new-module-btn" @click="addSection">
-            <span v-html="Icons.Plus"></span> 新增评分维度
-          </button>
+            </TransitionGroup>
+          </div>
         </div>
-
       </main>
 
-      <aside v-if="previewOpen" class="preview-pane">
-        <div class="pane-header">
-          <span>提示词预览</span>
-          <button class="icon-btn highlight" :disabled="previewLoading" @click="refreshPreview" title="刷新预览">
-            <span v-html="Icons.Refresh"></span>
-          </button>
+      <!-- Preview -->
+      <aside v-if="previewOpen" class="ide-preview glass">
+        <div class="preview-header">
+          <span class="preview-title">实时预览</span>
+          <button class="icon-btn tiny" @click="refreshPreview"><span v-html="Icons.Refresh"></span></button>
         </div>
-
-        <div class="preview-controls">
-          <label class="preview-label">目标满分</label>
-          <input
-            type="number"
-            class="transparent-input num"
-            min="1"
-            step="0.5"
-            v-model.number="previewScoreTargetMax"
-            @change="refreshPreview"
-          />
-          <span class="tag">规则满分：{{ previewRubricMax ?? "-" }}</span>
-        </div>
-
-        <div v-if="previewError" class="preview-error">{{ previewError }}</div>
-        <div v-if="previewLoading" class="preview-loading">正在生成预览...</div>
-
-        <div v-else class="preview-body">
-          <div class="preview-block">
-            <div class="preview-title">System Prompt</div>
-            <textarea class="preview-text" :value="previewSystemPrompt" readonly></textarea>
+        
+        <div class="preview-content">
+          <div class="preview-meta">
+             <div class="meta-item">
+               <label>目标满分</label>
+               <input type="number" v-model.number="previewScoreTargetMax" class="ide-input small" @change="refreshPreview" />
+             </div>
+             <div class="meta-item">
+               <label>规则总分</label>
+               <span class="value">{{ previewRubricMax ?? "-" }}</span>
+             </div>
           </div>
-          <div class="preview-block">
-            <div class="preview-title">User Prompt</div>
-            <textarea class="preview-text" :value="previewUserPrompt" readonly></textarea>
+          
+          <div class="code-block">
+            <div class="code-label">System Prompt</div>
+            <pre class="code-content">{{ previewSystemPrompt }}</pre>
+          </div>
+           <div class="code-block">
+            <div class="code-label">User Prompt</div>
+            <pre class="code-content">{{ previewUserPrompt }}</pre>
           </div>
         </div>
       </aside>
@@ -356,303 +302,250 @@ async function refreshPreview() {
 </template>
 
 <style scoped>
-.editor-shell {
-  display: flex; flex-direction: column; height: 100%; background: var(--bg-app);
-}
-
-.preview-pane {
-  width: 360px;
-  border-left: 1px solid var(--border-dim);
-  background: var(--bg-panel);
-  padding: 12px;
+/* --- IDE Layout --- */
+.ide-layout {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  height: 100%;
+  border-radius: var(--radius-l);
+  overflow: hidden;
+  background: var(--bg-app);
+  border: 1px solid var(--border-dim);
 }
 
-.preview-controls {
+/* Toolbar */
+.ide-toolbar {
+  height: 56px;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
-  border: 1px solid var(--border-dim);
-  border-radius: var(--radius-m);
-  background: var(--bg-app);
+  justify-content: space-between;
+  padding: 0 20px;
+  border-bottom: 1px solid var(--border-dim);
+  z-index: 20;
 }
-.preview-label { font-size: 12px; color: var(--txt-tertiary); }
-.preview-error { color: var(--error); font-size: 12px; }
-.preview-loading { color: var(--txt-tertiary); font-size: 12px; }
-.preview-body { display: flex; flex-direction: column; gap: 12px; }
-.preview-block { display: flex; flex-direction: column; gap: 6px; }
-.preview-title { font-size: 12px; color: var(--txt-tertiary); }
-.preview-text {
-  width: 100%;
-  min-height: 200px;
-  border: 1px solid var(--border-dim);
-  border-radius: 10px;
-  padding: 10px;
-  background: var(--bg-app);
-  color: var(--txt-secondary);
-  font-family: "JetBrains Mono";
-  font-size: 12px;
-  line-height: 1.6;
-  resize: vertical;
-}
+.toolbar-left { display: flex; align-items: center; gap: 10px; color: var(--txt-primary); }
+.toolbar-title { font-weight: 600; font-size: 14px; }
+.toolbar-right { display: flex; gap: 10px; }
 
-.editor-bar {
-  height: 48px; border-bottom: 1px solid var(--border-dim);
-  display: flex; justify-content: space-between; align-items: center;
-  padding: 0 24px; background: var(--bg-panel);
-}
-.bar-left { display: flex; align-items: center; gap: 8px; color: var(--brand); }
-.bar-title { font-weight: 600; font-size: 14px; color: var(--txt-primary); }
-.bar-right { display: flex; gap: 12px; }
-
-/* Icons & Buttons */
-.icon-btn {
-  background: transparent; border: none; color: var(--txt-tertiary);
-  cursor: pointer; padding: 6px; border-radius: 4px;
-  display: flex; align-items: center; justify-content: center; transition: all 0.2s;
-}
-.icon-btn:hover { color: var(--txt-primary); background: var(--bg-active); }
-.icon-btn.highlight:hover { color: var(--brand); background: var(--brand-dim); }
-.icon-btn.danger:hover { color: var(--error); background: var(--error-bg); }
-.icon-btn.big { padding: 8px; }
-.btn.icon-only { width: 32px; padding: 0; }
-.btn-text { margin-left: 4px; }
-.icon-text-desktop { display: inline-flex; }
-
-/* Layout */
-.ide-container { display: flex; flex: 1; overflow: hidden; }
-
-.sidebar-pane {
-  width: 240px; background: var(--bg-panel);
-  border-right: 1px solid var(--border-dim);
-  display: flex; flex-direction: column; flex-shrink: 0;
-}
-@media (max-width: 768px) {
-  .ide-container { flex-direction: column; }
-  .sidebar-pane { width: 100%; height: auto; max-height: 120px; border-right: none; border-bottom: 1px solid var(--border-dim); }
-  .file-list { flex-direction: row; overflow-x: auto; padding-bottom: 8px; }
-  .file-item { white-space: nowrap; }
-  .editor-bar { padding: 0 16px; }
-  .icon-text-desktop { display: none; }
-  .btn-text { margin-left: 0; }
-}
-
-.pane-header {
-  padding: 16px; font-size: 12px; font-weight: 600; color: var(--txt-tertiary);
-  display: flex; justify-content: space-between; align-items: center;
-}
-.file-list { display: flex; flex-direction: column; padding: 0 8px; gap: 2px; }
-.file-item {
-  display: flex; align-items: center; gap: 8px; padding: 8px 12px;
-  background: transparent; border: none; border-radius: 4px; cursor: pointer;
-  color: var(--txt-secondary); font-family: "JetBrains Mono", monospace; font-size: 13px; text-align: left;
-}
-.file-item:hover { background: var(--bg-active); color: var(--txt-primary); }
-.file-item.active { background: var(--bg-active); color: var(--brand); }
-.file-icon { opacity: 0.5; }
-
-.editor-pane {
-  flex: 1; overflow-y: auto; padding: 32px 40px;
-  display: flex; flex-direction: column; gap: 32px;
-}
-@media (max-width: 768px) { .editor-pane { padding: 20px 16px; gap: 24px; } }
-
-/* Config Header */
-.config-header-card {
-  display: flex; flex-direction: column; gap: 16px;
-  padding-bottom: 32px; border-bottom: 1px dashed var(--border-dim);
-}
-.header-row { display: flex; gap: 16px; align-items: flex-end; }
-.grow { flex: 1; }
-.field-group label {
-  display: block; font-size: 12px; color: var(--txt-tertiary); margin-bottom: 8px; font-weight: 500;
-}
-.code-input {
-  width: 100%; background: var(--bg-card); border: 1px solid var(--border-dim);
-  color: var(--txt-primary); padding: 10px; font-family: "JetBrains Mono", monospace;
-  font-size: 13px; border-radius: var(--radius-s);
-}
-.code-input:focus { border-color: var(--brand); outline: none; }
-.code-input.area { min-height: 80px; line-height: 1.6; }
-
-/* Rules Stack */
-.rules-stack { display: flex; flex-direction: column; gap: 16px; }
-.stack-label { font-size: 12px; font-weight: 600; color: var(--txt-tertiary); margin-bottom: 8px; }
-
-/* Module Block */
-.module-block {
-  border: 1px solid var(--border-dim); border-radius: var(--radius-m);
-  background: var(--bg-panel); overflow: hidden;
-  transition: all 0.3s var(--ease-out);
-}
-.module-block.collapsed { border-color: transparent; background: var(--bg-panel); }
-
-.module-head {
-  display: flex; justify-content: space-between; 
-  padding: 12px 24px; /* 增加头部内边距 */
-  background: var(--bg-panel); border-bottom: 1px solid var(--border-dim);
-  align-items: center; cursor: pointer; user-select: none; transition: background 0.2s;
-}
-.module-head:hover { background: var(--bg-active); }
-.module-block.collapsed .module-head { border-bottom-color: transparent; }
-
-.head-left { display: flex; align-items: center; gap: 24px; } /* 箭头与标题拉开距离 */
-.head-right { display: flex; align-items: center; gap: 12px; }
-.chevron-box {
-  color: var(--txt-tertiary); display: flex; align-items: center;
-  transition: transform 0.3s var(--ease-spring);
-}
-.chevron-box.rotate { transform: rotate(90deg); }
-
-.transparent-input {
-  background: transparent; border: none; color: var(--txt-primary);
-  font-family: inherit; font-size: 14px;
-}
-.transparent-input.title { 
-  font-weight: 600; width: 220px; cursor: text; 
-  padding-left: 8px; /* 文字自身再向右微调 */
-}
-/* Read-only Score Badge */
-.score-badge {
-  font-family: "JetBrains Mono"; font-weight: 600; font-size: 13px;
-  /* 冷淡的仪表盘风格，区分于可编辑的 Input */
-  color: var(--txt-secondary); 
-  background: var(--bg-active);
-  border: 1px solid var(--border-dim);
-  padding: 4px 12px; 
-  border-radius: 99px; /* 胶囊形，与方形输入框区分 */
-  min-width: 48px; text-align: center;
-  cursor: default; user-select: none;
-}
-.tag { font-size: 12px; color: var(--txt-tertiary); }
-.divider { width: 1px; height: 16px; background: var(--border-dim); margin: 0 4px; }
-
-@media (max-width: 600px) {
-  .transparent-input.title { width: 140px; text-overflow: ellipsis; }
-  .mobile-hide { display: none; }
-  .head-left, .head-right { gap: 8px; }
-  .module-head { padding: 10px 12px; }
-}
-
-/* --- New Item Card Style --- */
-.items-wrapper {
-  background: var(--bg-card); 
-  padding: 20px; /* 增加内边距，让卡片不要贴边 */
-}
-.items-grid {
-  display: flex; flex-direction: column; gap: 12px; /* 拉大卡片间距 */
-}
-
-.item-card {
-  background: var(--bg-panel); 
-  border: 1px solid var(--border-dim);
-  border-radius: 10px; /* 更圆润 */
+/* Body Split */
+.ide-body {
+  display: flex;
+  flex: 1;
   overflow: hidden;
-  transition: all 0.2s var(--ease-out);
-  box-shadow: 0 1px 2px rgba(0,0,0,0.05); /* 微弱投影 */
-}
-.item-card:hover { 
-  border-color: var(--border-light); 
-  transform: translateY(-1px);
-  box-shadow: 0 4px 8px rgba(0,0,0,0.1);
 }
 
-/* Item Header */
-.item-head {
-  display: flex; justify-content: space-between; align-items: center;
-  padding: 14px 28px; /* 保持外围舒适的大边距 */
-  cursor: pointer; user-select: none;
+/* Sidebar */
+.ide-sidebar {
+  width: 240px;
+  border-right: 1px solid var(--border-dim);
+  display: flex;
+  flex-direction: column;
   background: var(--bg-panel);
 }
-.item-head-left { display: flex; align-items: center; gap: 32px; } /* 暴力拉开间距：32px */
-.item-head-right { display: flex; align-items: center; gap: 12px; }
-
-.tiny-chevron {
-  width: 20px; height: 20px; display: flex; align-items: center; justify-content: center;
-  color: var(--txt-tertiary); transition: transform 0.3s var(--ease-spring);
-  border-radius: 4px;
+.sidebar-header {
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--txt-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid var(--border-dim);
 }
-.tiny-chevron:hover { background: var(--bg-active); color: var(--txt-primary); }
-.tiny-chevron.open { transform: rotate(90deg); color: var(--brand); }
 
-.item-key-input {
-  background: transparent; border: 1px solid transparent; 
-  color: var(--error); 
-  font-family: "JetBrains Mono"; font-size: 14px; font-weight: 600;
-  width: 220px; /* 稍微加宽 */
-  padding: 6px 12px; /* 增加内部左边距，文字再次右移 */
+.file-tree { padding: 8px; display: flex; flex-direction: column; gap: 2px; }
+.tree-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  border: none; background: transparent;
+  color: var(--txt-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  width: 100%; text-align: left;
+}
+.tree-item:hover { background: var(--bg-hover); color: var(--txt-primary); }
+.tree-item.active { background: var(--bg-active); color: var(--brand); }
+.tree-icon { color: var(--txt-tertiary); display: flex; }
+.tree-item.active .tree-icon { color: var(--brand); }
+
+/* Main Surface */
+.ide-surface {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  background: var(--bg-app);
+  padding: 32px;
+  gap: 32px;
+}
+
+/* Config Panel */
+.config-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding-bottom: 24px;
+  border-bottom: 1px dashed var(--border-dim);
+}
+.panel-row { display: flex; gap: 16px; align-items: flex-end; }
+.grow { flex: 1; }
+
+.input-group label {
+  display: block; font-size: 11px; font-weight: 600; 
+  color: var(--txt-tertiary); margin-bottom: 6px;
+}
+.ide-input {
+  width: 100%;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-dim);
+  color: var(--txt-primary);
+  padding: 8px 12px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 13px;
   border-radius: 6px;
   transition: all 0.2s;
 }
-.item-key-input:hover { background: var(--bg-hover); }
-.item-key-input:focus { outline: none; background: var(--bg-active); border-color: var(--border-dim); }
+.ide-input:focus { border-color: var(--brand); box-shadow: 0 0 0 2px var(--brand-dim); }
+.ide-input.area { line-height: 1.6; }
+.ide-input.transparent { background: transparent; border-color: transparent; padding: 0; }
+.ide-input.transparent:focus { background: var(--bg-panel); border-color: var(--border-dim); padding: 8px; }
 
-.item-score-input {
-  width: 42px; background: var(--bg-app); border: 1px solid var(--border-dim);
-  border-radius: 6px; text-align: center; color: var(--brand);
-  font-family: "JetBrains Mono"; font-size: 13px; padding: 4px 0; font-weight: 600;
+/* Rules Canvas */
+.rules-canvas { display: flex; flex-direction: column; gap: 16px; }
+.canvas-header {
+  display: flex; justify-content: space-between; align-items: center;
 }
-.item-score-input:focus { border-color: var(--brand); outline: none; box-shadow: 0 0 0 2px var(--brand-dim); }
+.canvas-title { font-size: 14px; font-weight: 700; color: var(--txt-secondary); }
 
-.item-tag { 
-  font-size: 11px; font-weight: 600; color: var(--txt-tertiary); 
-  text-transform: uppercase; letter-spacing: 0.05em;
+.rule-block {
+  background: var(--bg-panel);
+  border: 1px solid var(--border-dim);
+  border-radius: 8px;
+  margin-bottom: 12px;
+  overflow: hidden;
 }
+.rule-block.collapsed { background: var(--bg-app); }
 
-/* Item Body (Drawer) */
-.item-body {
-  border-top: 1px solid var(--border-dim);
-  background: var(--bg-app); /* 比卡片深一点，形成凹槽感 */
-  position: relative;
+.block-header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 10px 16px;
+  cursor: pointer;
+  background: var(--bg-active);
+  border-bottom: 1px solid var(--border-dim);
 }
-/* 装饰性左侧线条，增强层级感 */
-.item-body::before {
-  content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
-  background: var(--brand); opacity: 0.5;
-}
+.rule-block.collapsed .block-header { border-bottom: none; background: transparent; }
 
-.desc-textarea {
-  width: 100%; border: none; background: transparent; 
-  padding: 16px 20px; /* 舒适的内边距 */
-  color: var(--txt-secondary); /* 稍微柔和一点的文字颜色 */
-  font-family: "JetBrains Mono"; font-size: 13px;
-  resize: vertical; min-height: 80px; line-height: 1.6; display: block;
-}
-.desc-textarea:focus { outline: none; color: var(--txt-primary); background: rgba(255,255,255,0.02); }
-.desc-textarea::placeholder { color: var(--txt-dim); font-style: italic; }
+.header-left, .header-right { display: flex; align-items: center; gap: 12px; }
 
-/* Mobile Adjustments for Item Card */
-@media (max-width: 600px) {
-  .items-wrapper { padding: 12px; }
-  .item-head { padding: 12px; }
-  .item-key-input { width: 140px; font-size: 13px; }
-  .item-tag { display: none; }
+.invisible-input {
+  background: transparent; border: 1px solid transparent;
+  color: var(--txt-primary); font-family: inherit; font-size: 13px;
+  padding: 4px; border-radius: 4px;
 }
+.invisible-input:hover { background: var(--bg-hover); }
+.invisible-input:focus { background: var(--bg-app); border-color: var(--brand); }
+.invisible-input.title { font-weight: 600; width: 200px; }
 
-.add-item-btn {
-  margin-top: 12px; align-self: center; /* 居中按钮更优雅 */
-  background: transparent; border: 1px dashed var(--border-dim);
-  color: var(--txt-tertiary); padding: 8px 24px; border-radius: 99px; /* 胶囊型 */
-  cursor: pointer; display: flex; align-items: center; gap: 8px; font-size: 12px;
-  transition: all 0.2s;
-}
-.add-item-btn:hover { 
-  color: var(--brand); border-color: var(--brand); 
-  background: var(--brand-dim);
+.badge.score {
+  font-family: "JetBrains Mono"; font-size: 11px;
+  background: var(--bg-app); border: 1px solid var(--border-dim);
+  padding: 2px 8px; border-radius: 99px; color: var(--txt-secondary);
 }
 
-.new-module-btn {
-  width: 100%; padding: 12px; border: 1px dashed var(--border-dim);
-  background: transparent; color: var(--txt-tertiary); cursor: pointer;
-  border-radius: var(--radius-m); display: flex; align-items: center; justify-content: center;
-  gap: 8px; font-size: 13px;
-}
-.new-module-btn:hover { border-color: var(--txt-secondary); color: var(--txt-primary); background: var(--bg-active); }
+.block-body { padding: 16px; background: var(--bg-panel); }
+.sub-items { display: flex; flex-direction: column; gap: 8px; }
 
-/* Transitions */
-.list-anim-move, .list-anim-enter-active, .list-anim-leave-active { transition: all 0.3s var(--ease-spring); }
-.list-anim-enter-from, .list-anim-leave-to { opacity: 0; transform: scale(0.98); }
+.sub-item {
+  border: 1px solid var(--border-dim);
+  border-radius: 6px;
+  background: var(--bg-app);
+  padding: 8px 12px;
+}
+.item-row { display: flex; justify-content: space-between; align-items: center; }
+.item-left { display: flex; align-items: center; gap: 8px; cursor: pointer; flex: 1; }
+.item-right { display: flex; align-items: center; gap: 8px; }
+
+.chevron { width: 16px; height: 16px; color: var(--txt-tertiary); transition: transform 0.2s; display: flex; }
+.chevron.rot { transform: rotate(90deg); }
+.chevron.tiny { width: 12px; height: 12px; }
+
+.score-input {
+  width: 40px; text-align: center;
+  background: var(--bg-panel); border: 1px solid var(--border-dim);
+  border-radius: 4px; font-family: "JetBrains Mono"; font-size: 12px;
+  color: var(--brand); font-weight: 600;
+}
+
+.item-desc {
+  margin-top: 8px; padding-left: 24px; padding-right: 40px;
+  border-top: 1px dashed var(--border-dim);
+  padding-top: 8px;
+}
+
+.add-sub-btn {
+  width: 100%; margin-top: 12px;
+  border: 1px dashed var(--border-dim);
+  background: transparent; color: var(--txt-tertiary);
+  padding: 6px; border-radius: 6px; font-size: 12px;
+  cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;
+}
+.add-sub-btn:hover { border-color: var(--brand); color: var(--brand); background: var(--brand-dim); }
+
+/* Preview Pane */
+.ide-preview {
+  width: 320px;
+  border-left: 1px solid var(--border-dim);
+  background: var(--bg-panel);
+  display: flex; flex-direction: column;
+}
+.preview-header {
+  height: 40px; display: flex; align-items: center; justify-content: space-between;
+  padding: 0 12px; border-bottom: 1px solid var(--border-dim);
+  font-size: 12px; font-weight: 600; color: var(--txt-secondary);
+}
+.preview-content {
+  flex: 1; overflow-y: auto; padding: 16px;
+  display: flex; flex-direction: column; gap: 16px;
+}
+
+.preview-meta {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+  background: var(--bg-app); padding: 12px; border-radius: 8px; border: 1px solid var(--border-dim);
+}
+.meta-item { display: flex; flex-direction: column; gap: 4px; }
+.meta-item label { font-size: 10px; color: var(--txt-tertiary); text-transform: uppercase; }
+.meta-item .value { font-family: "JetBrains Mono"; font-size: 14px; font-weight: 600; color: var(--txt-primary); }
+
+.code-block { display: flex; flex-direction: column; gap: 6px; }
+.code-label { font-size: 11px; color: var(--txt-tertiary); }
+.code-content {
+  background: var(--bg-app); border: 1px solid var(--border-dim);
+  border-radius: 6px; padding: 12px;
+  font-family: "JetBrains Mono"; font-size: 11px; line-height: 1.5;
+  color: var(--txt-secondary); white-space: pre-wrap; word-break: break-all;
+  max-height: 300px; overflow-y: auto;
+}
+
+/* Utils */
+.icon-btn {
+  background: transparent; border: none; color: var(--txt-tertiary); cursor: pointer;
+  padding: 6px; border-radius: 4px; display: flex; align-items: center; justify-content: center;
+}
+.icon-btn:hover { color: var(--txt-primary); background: var(--bg-hover); }
+.icon-btn.danger:hover { color: var(--error); background: var(--error-bg); }
+.icon-btn.tiny { width: 24px; height: 24px; padding: 0; }
+
+.list-anim-enter-active, .list-anim-leave-active { transition: all 0.3s var(--ease-spring); }
+.list-anim-enter-from, .list-anim-leave-to { opacity: 0; transform: translateY(-10px); }
+
+@media (max-width: 900px) {
+  .ide-body { flex-direction: column; }
+  .ide-sidebar { width: 100%; height: auto; max-height: 150px; }
+  .ide-preview { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 100; }
+}
+
 </style>

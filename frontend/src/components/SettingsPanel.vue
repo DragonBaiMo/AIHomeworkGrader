@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ref } from "vue";
 import type { GradeConfigPayload } from "@/api/types";
 
 const props = defineProps<{
@@ -7,219 +8,145 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: "update:config", payload: Partial<GradeConfigPayload>): void;
+  (e: "submit"): void; // Return to workspace
 }>();
 
-function updateField<T extends keyof GradeConfigPayload>(key: T, value: GradeConfigPayload[T]) {
-  emit("update:config", { [key]: value } as Partial<GradeConfigPayload>);
+const localConfig = ref({ ...props.config });
+
+function handleChange<T extends keyof GradeConfigPayload>(key: T, value: GradeConfigPayload[T]) {
+  localConfig.value[key] = value;
+  emit("update:config", { [key]: value });
 }
 </script>
 
 <template>
-  <div class="settings-stage">
-    <div class="settings-content animate-in">
-      
-      <!-- Intro -->
-      <header class="page-header">
-        <h2>系统参数配置</h2>
-        <p>配置大语言模型连接参数与全局行为。</p>
+  <div class="settings-layout animate-in">
+    <div class="settings-card glass">
+      <header class="settings-header">
+        <h2 class="title">系统设置</h2>
+        <p class="subtitle">配置 API 连接与模型参数</p>
       </header>
 
-      <div class="settings-group">
-        <div class="group-label">模型连接</div>
-        
-        <!-- API Endpoint -->
-        <div class="setting-item">
-          <div class="item-meta">
-            <label>API 接口地址</label>
-            <span class="desc">兼容 OpenAI 协议的接口地址</span>
-          </div>
-          <div class="input-slot">
-            <input
-              type="text"
-              class="tech-input"
-              :value="config.apiUrl"
-              placeholder="https://api.openai.com/v1/chat/completions"
-              @input="updateField('apiUrl', ($event.target as HTMLInputElement).value)"
-            />
-          </div>
+      <div class="settings-body">
+        <div class="form-group">
+          <label class="form-label">API Base URL</label>
+          <input 
+            type="text" 
+            class="form-input" 
+            :value="localConfig.apiUrl"
+            @input="handleChange('apiUrl', ($event.target as HTMLInputElement).value)"
+            placeholder="https://api.openai.com/v1"
+          />
+          <p class="form-hint">LLM 服务端点地址</p>
         </div>
 
-        <!-- API Key -->
-        <div class="setting-item">
-          <div class="item-meta">
-            <label>API 密钥</label>
-            <span class="desc">密钥仅存储于本地浏览器，不上传云端</span>
-          </div>
-          <div class="input-slot">
-            <input
-              type="password"
-              class="tech-input"
-              :value="config.apiKey"
-              placeholder="sk-..."
-              @input="updateField('apiKey', ($event.target as HTMLInputElement).value)"
-            />
-          </div>
+        <div class="form-group">
+          <label class="form-label">API Key</label>
+          <input 
+            type="password" 
+            class="form-input" 
+            :value="localConfig.apiKey"
+            @input="handleChange('apiKey', ($event.target as HTMLInputElement).value)"
+            placeholder="sk-..."
+          />
         </div>
 
-        <!-- Model Name -->
-        <div class="setting-item">
-          <div class="item-meta">
-            <label>模型名称</label>
-            <span class="desc">要调用的模型标识符</span>
-          </div>
-          <div class="input-slot">
-            <input
-              type="text"
-              class="tech-input mono"
-              :value="config.modelName"
-              placeholder="gpt-4o"
-              @input="updateField('modelName', ($event.target as HTMLInputElement).value)"
-            />
-          </div>
+        <div class="form-group">
+          <label class="form-label">Model Name</label>
+          <input 
+            type="text" 
+            class="form-input" 
+            :value="localConfig.modelName"
+            @input="handleChange('modelName', ($event.target as HTMLInputElement).value)"
+            placeholder="gpt-4o"
+          />
         </div>
-      </div>
 
-      <div class="settings-group">
-        <div class="group-label">系统行为</div>
+        <div class="divider"></div>
 
-        <div class="setting-item">
-          <div class="item-meta">
-            <label>目标满分</label>
-            <span class="desc">将评分规则总分按比例换算到该满分（例如 60）</span>
+        <div class="form-group row">
+          <div class="text-col">
+            <label class="form-label">模拟模式 (Mock)</label>
+            <p class="form-hint">不调用真实 API，仅返回测试数据</p>
           </div>
-          <div class="input-slot">
-            <input
-              type="number"
-              class="tech-input mono"
-              :value="config.scoreTargetMax"
-              min="1"
-              step="0.5"
-              placeholder="60"
-              @input="updateField('scoreTargetMax', Number(($event.target as HTMLInputElement).value || 60))"
-            />
-          </div>
-        </div>
-        
-        <div class="setting-item">
-          <div class="item-meta">
-            <label>启用文档格式校验</label>
-            <span class="desc">未勾选时仅解析正文，不做格式校验</span>
-          </div>
-          <label class="toggle-switch">
+          <label class="toggle">
             <input 
               type="checkbox" 
-              :checked="!config.skipFormatCheck"
-              @change="updateField('skipFormatCheck', !(($event.target as HTMLInputElement).checked))"
+              :checked="localConfig.mock"
+              @change="handleChange('mock', ($event.target as HTMLInputElement).checked)"
             />
-            <span class="slider"></span>
+            <span class="track"></span>
           </label>
         </div>
       </div>
-
     </div>
   </div>
 </template>
 
 <style scoped>
-.settings-stage {
+.settings-layout {
   display: flex;
   justify-content: center;
-  padding-top: 20px;
+  padding-top: 40px;
 }
 
-.settings-content {
+.settings-card {
   width: 100%;
-  max-width: 640px;
-  display: flex;
-  flex-direction: column;
-  gap: 48px;
+  max-width: 500px;
+  border-radius: var(--radius-l);
+  padding: 40px;
+  background: var(--bg-card);
+  box-shadow: var(--shadow-float);
 }
 
-.page-header {
-  border-bottom: 1px solid var(--border-dim);
-  padding-bottom: 24px;
-}
-.page-header h2 { font-size: 22px; margin-bottom: 8px; color: var(--txt-primary); }
-.page-header p { font-size: 14px; color: var(--txt-tertiary); }
+.settings-header { margin-bottom: 32px; text-align: center; }
+.title { font-size: 24px; font-weight: 700; margin-bottom: 8px; color: var(--txt-primary); }
+.subtitle { color: var(--txt-tertiary); font-size: 14px; }
 
-/* Groups */
-.settings-group {
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
-}
+.settings-body { display: flex; flex-direction: column; gap: 24px; }
 
-.group-label {
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.12em;
-  color: var(--brand);
-  opacity: 0.8;
-  margin-bottom: 8px;
-}
+.form-group { display: flex; flex-direction: column; gap: 8px; }
+.form-group.row { flex-direction: row; justify-content: space-between; align-items: center; }
 
-/* Items */
-.setting-item {
-  display: grid;
-  grid-template-columns: 200px 1fr;
-  align-items: center;
-  gap: 24px;
-}
-
-.item-meta { display: flex; flex-direction: column; gap: 4px; }
-.item-meta label { font-size: 14px; font-weight: 500; color: var(--txt-primary); }
-.item-meta .desc { font-size: 12px; color: var(--txt-tertiary); }
-
-/* Tech Input (Inset style) */
-.input-slot {
-  position: relative;
-}
-.tech-input {
+.form-label { font-size: 13px; font-weight: 600; color: var(--txt-secondary); }
+.form-input {
   width: 100%;
-  background: var(--bg-app);
+  height: 44px;
+  padding: 0 16px;
+  background: var(--bg-panel);
   border: 1px solid var(--border-dim);
-  border-radius: var(--radius-m);
-  padding: 12px 16px;
+  border-radius: 8px;
   color: var(--txt-primary);
+  font-family: "JetBrains Mono";
   font-size: 14px;
-  box-shadow: inset 0 2px 4px rgba(0,0,0,0.2);
   transition: all 0.2s;
 }
-.tech-input:focus {
+.form-input:focus {
   border-color: var(--brand);
+  box-shadow: 0 0 0 3px var(--brand-dim);
   background: var(--bg-app);
-  box-shadow: inset 0 2px 4px rgba(0,0,0,0.2), 0 0 0 1px var(--brand-dim);
 }
-.tech-input.mono { font-family: "JetBrains Mono", monospace; letter-spacing: -0.02em; }
+.form-hint { font-size: 12px; color: var(--txt-tertiary); }
+
+.divider { height: 1px; background: var(--border-dim); margin: 8px 0; }
 
 /* Toggle */
-.toggle-switch {
-  position: relative;
-  width: 44px;
-  height: 24px;
-  justify-self: end;
+.toggle { position: relative; width: 44px; height: 24px; cursor: pointer; }
+.toggle input { display: none; }
+.track {
+  position: absolute; inset: 0; background: var(--bg-active);
+  border-radius: 99px; transition: all 0.3s;
+  border: 1px solid var(--border-dim);
 }
-.toggle-switch input { opacity: 0; width: 0; height: 0; }
-.slider {
-  position: absolute;
-  cursor: pointer;
-  inset: 0;
-  background-color: var(--bg-active);
-  border-radius: 99px;
-  transition: .3s;
-  border: 1px solid var(--border-light);
+.track::after {
+  content: ''; position: absolute; top: 2px; left: 2px;
+  width: 18px; height: 18px; background: var(--txt-secondary);
+  border-radius: 50%; transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
 }
-.slider:before {
-  position: absolute;
-  content: "";
-  height: 18px;
-  width: 18px;
-  left: 2px;
-  bottom: 2px;
-  background-color: var(--txt-secondary);
-  border-radius: 50%;
-  transition: .3s var(--ease-spring);
+input:checked + .track { background: var(--brand); border-color: var(--brand); }
+input:checked + .track::after { transform: translateX(20px); background: #fff; }
+
+@media (max-width: 600px) {
+  .settings-card { padding: 24px; }
 }
-input:checked + .slider { background-color: var(--brand-dim); border-color: var(--brand); }
-input:checked + .slider:before { transform: translateX(20px); background-color: var(--brand); }
 </style>

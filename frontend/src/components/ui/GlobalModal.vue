@@ -4,33 +4,26 @@ import { useUI } from "@/composables/useUI";
 const { modalState, closeModal } = useUI();
 
 function handleConfirm() {
-  modalState.options?.onConfirm();
-  closeModal();
-}
-
-function handleCancel() {
-  modalState.options?.onCancel?.();
+  if (modalState.onConfirm) modalState.onConfirm();
   closeModal();
 }
 </script>
 
 <template>
   <Transition name="modal-fade">
-    <div v-if="modalState.isOpen" class="modal-backdrop" @click.self="handleCancel">
+    <div v-if="modalState.show" class="modal-backdrop" @click.self="closeModal">
       <div class="modal-card">
-        <h3 class="modal-title">{{ modalState.options?.title }}</h3>
-        <p class="modal-content">{{ modalState.options?.content }}</p>
+        <h3 class="modal-title">{{ modalState.title }}</h3>
+        <p class="modal-content">{{ modalState.content }}</p>
         
         <div class="modal-actions">
-          <button class="btn ghost" @click="handleCancel">
-            {{ modalState.options?.cancelText || "取消" }}
-          </button>
+          <button class="btn ghost" @click="closeModal">取消</button>
           <button 
             class="btn" 
-            :class="modalState.options?.type === 'danger' ? 'danger' : 'primary'"
+            :class="modalState.type === 'danger' ? 'danger' : 'primary'"
             @click="handleConfirm"
           >
-            {{ modalState.options?.confirmText || "确认" }}
+            {{ modalState.confirmText || '确认' }}
           </button>
         </div>
       </div>
@@ -40,69 +33,37 @@ function handleCancel() {
 
 <style scoped>
 .modal-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.4);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  z-index: 9998;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 20px;
+  position: fixed; inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  z-index: 9000;
+  display: flex; align-items: center; justify-content: center;
 }
 
 .modal-card {
-  background: var(--bg-panel);
-  border: 1px solid var(--border-dim);
-  border-radius: 20px;
+  width: 90%; max-width: 400px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-l);
   padding: 32px;
-  width: 100%;
-  max-width: 400px;
-  box-shadow: 0 20px 50px -10px rgba(0,0,0,0.3);
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  transform-origin: center;
+  box-shadow: var(--shadow-float);
+  display: flex; flex-direction: column; gap: 20px;
+  text-align: center;
 }
 
-.modal-title {
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--txt-primary);
-}
+.modal-title { font-size: 20px; font-weight: 700; color: var(--txt-primary); }
+.modal-content { font-size: 14px; color: var(--txt-secondary); line-height: 1.6; }
 
-.modal-content {
-  font-size: 15px;
-  color: var(--txt-secondary);
-  line-height: 1.6;
-}
+.modal-actions { display: flex; gap: 12px; justify-content: center; margin-top: 8px; }
+.modal-actions .btn { min-width: 100px; }
 
-.modal-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 12px;
-  margin-top: 16px;
-}
+.modal-fade-enter-active, .modal-fade-leave-active { transition: opacity 0.3s; }
+.modal-fade-enter-from, .modal-fade-leave-to { opacity: 0; }
+.modal-fade-enter-active .modal-card { animation: popIn 0.3s var(--ease-spring); }
+.modal-fade-leave-active .modal-card { animation: popIn 0.3s var(--ease-spring) reverse; }
 
-/* Transitions */
-.modal-fade-enter-active,
-.modal-fade-leave-active {
-  transition: opacity 0.3s ease;
-}
-.modal-fade-enter-active .modal-card,
-.modal-fade-leave-active .modal-card {
-  transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-}
-
-.modal-fade-enter-from,
-.modal-fade-leave-to {
-  opacity: 0;
-}
-.modal-fade-enter-from .modal-card {
-  transform: scale(0.9) translateY(20px);
-}
-.modal-fade-leave-to .modal-card {
-  transform: scale(0.95) translateY(10px);
+@keyframes popIn {
+  from { transform: scale(0.9); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
 }
 </style>
