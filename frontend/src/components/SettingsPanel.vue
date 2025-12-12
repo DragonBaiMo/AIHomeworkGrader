@@ -21,17 +21,17 @@ function updateField<T extends keyof GradeConfigPayload>(key: T, value: GradeCon
       <!-- Intro -->
       <header class="page-header">
         <h2>系统参数配置</h2>
-        <p>配置大语言模型 (LLM) 连接参数与全局行为。</p>
+        <p>配置大语言模型连接参数与全局行为。</p>
       </header>
 
       <div class="settings-group">
-        <div class="group-label">模型连接 (LLM CONNECTION)</div>
+        <div class="group-label">模型连接</div>
         
         <!-- API Endpoint -->
         <div class="setting-item">
           <div class="item-meta">
             <label>API 接口地址</label>
-            <span class="desc">OpenAI 兼容协议的 API Endpoint</span>
+            <span class="desc">兼容 OpenAI 协议的接口地址</span>
           </div>
           <div class="input-slot">
             <input
@@ -47,7 +47,7 @@ function updateField<T extends keyof GradeConfigPayload>(key: T, value: GradeCon
         <!-- API Key -->
         <div class="setting-item">
           <div class="item-meta">
-            <label>API 密钥 (Key)</label>
+            <label>API 密钥</label>
             <span class="desc">密钥仅存储于本地浏览器，不上传云端</span>
           </div>
           <div class="input-slot">
@@ -64,8 +64,8 @@ function updateField<T extends keyof GradeConfigPayload>(key: T, value: GradeCon
         <!-- Model Name -->
         <div class="setting-item">
           <div class="item-meta">
-            <label>模型名称 (Model)</label>
-            <span class="desc">目标调用的模型标识符</span>
+            <label>模型名称</label>
+            <span class="desc">要调用的模型标识符</span>
           </div>
           <div class="input-slot">
             <input
@@ -80,18 +80,36 @@ function updateField<T extends keyof GradeConfigPayload>(key: T, value: GradeCon
       </div>
 
       <div class="settings-group">
-        <div class="group-label">系统行为 (BEHAVIOR)</div>
+        <div class="group-label">系统行为</div>
+
+        <div class="setting-item">
+          <div class="item-meta">
+            <label>目标满分</label>
+            <span class="desc">将评分规则总分按比例换算到该满分（例如 60）</span>
+          </div>
+          <div class="input-slot">
+            <input
+              type="number"
+              class="tech-input mono"
+              :value="config.scoreTargetMax"
+              min="1"
+              step="0.5"
+              placeholder="60"
+              @input="updateField('scoreTargetMax', Number(($event.target as HTMLInputElement).value || 60))"
+            />
+          </div>
+        </div>
         
         <div class="setting-item">
           <div class="item-meta">
-            <label>允许非标准格式</label>
-            <span class="desc">跳过 .docx 文件的严格格式校验</span>
+            <label>启用文档格式校验</label>
+            <span class="desc">未勾选时仅解析正文，不做格式校验</span>
           </div>
           <label class="toggle-switch">
             <input 
               type="checkbox" 
-              :checked="config.skipFormatCheck"
-              @change="updateField('skipFormatCheck', ($event.target as HTMLInputElement).checked)"
+              :checked="!config.skipFormatCheck"
+              @change="updateField('skipFormatCheck', !(($event.target as HTMLInputElement).checked))"
             />
             <span class="slider"></span>
           </label>

@@ -2,6 +2,7 @@
 import { computed, reactive, ref, watch } from "vue";
 import type { PromptCategory, PromptConfig, PromptSection } from "@/api/types";
 import { useUI } from "@/composables/useUI";
+import { fetchPromptPreview } from "@/api/client";
 
 const props = defineProps<{
   config: PromptConfig | null;
@@ -20,6 +21,14 @@ const editable = ref<PromptConfig | null>(null);
 const currentKey = ref<string>("");
 const collapsedModules = reactive(new Set<number>());
 const expandedItems = reactive(new Set<string>()); 
+const previewOpen = ref(false);
+const previewLoading = ref(false);
+const previewError = ref("");
+const previewScoreTargetMax = ref<number>(60);
+const previewSystemPrompt = ref("");
+const previewUserPrompt = ref("");
+const previewRubricMax = ref<number | null>(null);
+const SCORE_STORAGE_KEY = "ai-grader-pro-config";
 
 const Icons = {
   Plus: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>`,
@@ -124,6 +133,34 @@ function handleSave() {
   });
   emit("save", JSON.parse(JSON.stringify(editable.value)));
 }
+
+async function refreshPreview() {
+  if (!editable.value || !currentKey.value) return;
+  previewLoading.value = true;
+  previewError.value = "";
+  try {
+    if (previewScoreTargetMax.value === 60) {
+      try {
+        const cache = localStorage.getItem(SCORE_STORAGE_KEY);
+        if (cache) {
+          const saved = JSON.parse(cache) as { scoreTargetMax?: number };
+          if (typeof saved.scoreTargetMax === "number" && saved.scoreTargetMax > 0) {
+            previewScoreTargetMax.value = saved.scoreTargetMax;
+          }
+        }
+      } catch { /* ignore */ }
+    }
+    const resp = await fetchPromptPreview(editable.value, currentKey.value, previewScoreTargetMax.value);
+    previewSystemPrompt.value = resp.system_prompt || "";
+    previewUserPrompt.value = resp.user_prompt || "";
+    previewRubricMax.value = typeof resp.score_rubric_max === "number" ? resp.score_rubric_max : null;
+    showToast("提示词预览已更新", "success");
+  } catch (err) {
+    previewError.value = (err as Error).message;
+  } finally {
+    previewLoading.value = false;
+  }
+}
 </script>
 
 <template>
@@ -141,6 +178,10 @@ function handleSave() {
         <button class="btn primary small" :disabled="saving || !editable" @click="handleSave">
           <span class="icon-text-desktop" v-html="Icons.Save"></span>
           <span class="btn-text">{{ saving ? "..." : "保存" }}</span>
+        </button>
+        <button class="btn ghost small" :disabled="!editable" @click="previewOpen = !previewOpen; if (previewOpen) refreshPreview();">
+          <span class="icon-text-desktop" v-html="Icons.Code"></span>
+          <span class="btn-text">预览</span>
         </button>
       </div>
     </header>
@@ -274,6 +315,42 @@ function handleSave() {
         </div>
 
       </main>
+
+      <aside v-if="previewOpen" class="preview-pane">
+        <div class="pane-header">
+          <span>提示词预览</span>
+          <button class="icon-btn highlight" :disabled="previewLoading" @click="refreshPreview" title="刷新预览">
+            <span v-html="Icons.Refresh"></span>
+          </button>
+        </div>
+
+        <div class="preview-controls">
+          <label class="preview-label">目标满分</label>
+          <input
+            type="number"
+            class="transparent-input num"
+            min="1"
+            step="0.5"
+            v-model.number="previewScoreTargetMax"
+            @change="refreshPreview"
+          />
+          <span class="tag">规则满分：{{ previewRubricMax ?? "-" }}</span>
+        </div>
+
+        <div v-if="previewError" class="preview-error">{{ previewError }}</div>
+        <div v-if="previewLoading" class="preview-loading">正在生成预览...</div>
+
+        <div v-else class="preview-body">
+          <div class="preview-block">
+            <div class="preview-title">System Prompt</div>
+            <textarea class="preview-text" :value="previewSystemPrompt" readonly></textarea>
+          </div>
+          <div class="preview-block">
+            <div class="preview-title">User Prompt</div>
+            <textarea class="preview-text" :value="previewUserPrompt" readonly></textarea>
+          </div>
+        </div>
+      </aside>
     </div>
   </div>
 </template>
@@ -281,6 +358,45 @@ function handleSave() {
 <style scoped>
 .editor-shell {
   display: flex; flex-direction: column; height: 100%; background: var(--bg-app);
+}
+
+.preview-pane {
+  width: 360px;
+  border-left: 1px solid var(--border-dim);
+  background: var(--bg-panel);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.preview-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-dim);
+  border-radius: var(--radius-m);
+  background: var(--bg-app);
+}
+.preview-label { font-size: 12px; color: var(--txt-tertiary); }
+.preview-error { color: var(--error); font-size: 12px; }
+.preview-loading { color: var(--txt-tertiary); font-size: 12px; }
+.preview-body { display: flex; flex-direction: column; gap: 12px; }
+.preview-block { display: flex; flex-direction: column; gap: 6px; }
+.preview-title { font-size: 12px; color: var(--txt-tertiary); }
+.preview-text {
+  width: 100%;
+  min-height: 200px;
+  border: 1px solid var(--border-dim);
+  border-radius: 10px;
+  padding: 10px;
+  background: var(--bg-app);
+  color: var(--txt-secondary);
+  font-family: "JetBrains Mono";
+  font-size: 12px;
+  line-height: 1.6;
+  resize: vertical;
 }
 
 .editor-bar {

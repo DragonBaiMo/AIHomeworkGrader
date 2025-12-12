@@ -4,19 +4,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import Enum
 from typing import Dict, Optional
 
 from config.settings import BASE_DIR
-from app.service.prompt_config import load_prompt_config, render_category_prompt
+from app.service.prompt_builder import build_user_prompt
+from app.service.prompt_config import load_prompt_config
 
 
-class AssignmentCategory(str, Enum):
-    """作业类别枚举。"""
-
-    CAREER_PLAN = "career_plan"
-    MAJOR_ANALYSIS = "major_analysis"
-    GENERIC = "generic"
+AssignmentCategory = str
 
 
 @dataclass(frozen=True)
@@ -29,7 +24,7 @@ class AssignmentRule:
 
 
 RULES: dict[AssignmentCategory, AssignmentRule] = {
-    AssignmentCategory.CAREER_PLAN: AssignmentRule(
+    "career_plan": AssignmentRule(
         name="职业规划书",
         min_length=50,
         description=(
@@ -37,7 +32,7 @@ RULES: dict[AssignmentCategory, AssignmentRule] = {
             "重点考察自我认知是否清晰、职业目标是否具体可行、路径规划是否有步骤与时间节点。"
         ),
     ),
-    AssignmentCategory.MAJOR_ANALYSIS: AssignmentRule(
+    "major_analysis": AssignmentRule(
         name="专业分析报告",
         min_length=50,
         description=(
@@ -46,7 +41,7 @@ RULES: dict[AssignmentCategory, AssignmentRule] = {
             "重点考察行业理解深度与逻辑分析能力。"
         ),
     ),
-    AssignmentCategory.GENERIC: AssignmentRule(
+    "generic": AssignmentRule(
         name="通用写作",
         min_length=50,
         description="通用写作任务，仅要求结构清晰、论点明确、用语规范。",
@@ -90,6 +85,18 @@ def _normalize_label(label: str) -> str:
     return label.replace(" ", "").replace("：", ":").strip()
 
 
+def _is_auto_template_hint(template_hint: Optional[str]) -> bool:
+    """判断模板提示是否代表“自动识别”。"""
+    hint = _normalize_label(template_hint or "")
+    if not hint:
+        return True
+    if hint == "auto":
+        return True
+    if hint.startswith("自动识别"):
+        return True
+    return hint in ("通用作业分类批改", "职业规划书与专业分析报告的自动分类")
+
+
 def detect_assignment_category(filename: str, template_hint: Optional[str] = None) -> AssignmentCategory:
     """
     根据文件名中的关键字判断作业类型。
@@ -100,21 +107,47 @@ def detect_assignment_category(filename: str, template_hint: Optional[str] = Non
     3. 若两类关键字同时出现，或两类关键字都未出现，则视为问题文件，抛出异常；
        由上层记录到异常清单中。
     """
+    # 若前端明确选择了分类（低代码模式），优先使用选择结果。
+    hint = _normalize_label(template_hint or "")
+    config = load_prompt_config()
+    if hint and not _is_auto_template_hint(hint):
+        if config is not None:
+            if hint in config.categories:
+                return hint
+            for cat_key, cat_cfg in config.categories.items():
+                if _normalize_label(cat_cfg.display_name) == hint:
+                    return cat_key
+        raise ValueError(f"未找到对应作业分类：{template_hint}")
+
     text = _normalize_label(filename)
+    if config is not None and config.categories:
+        matched: list[tuple[str, str]] = []
+        for cat_key, cat_cfg in config.categories.items():
+            keyword = _normalize_label(cat_cfg.display_name or "")
+            if keyword and keyword in text:
+                matched.append((cat_key, cat_cfg.display_name))
+
+        if len(matched) == 1:
+            return matched[0][0]
+        if not matched:
+            raise ValueError("作业文件名未匹配到任何分类关键字，请检查文件名是否包含分类列表名称。")
+        names = "、".join(name for _key, name in matched)
+        raise ValueError(f"作业文件名同时命中多个分类关键字：{names}。请确保文件名仅包含一个分类关键字。")
+
     has_career = ("职业规划书" in text) or ("职业规划" in text)
     has_major = ("专业分析报告" in text) or ("专业分析" in text)
 
     if has_career and not has_major:
-        return AssignmentCategory.CAREER_PLAN
+        return "career_plan"
     if has_major and not has_career:
-        return AssignmentCategory.MAJOR_ANALYSIS
+        return "major_analysis"
 
     raise ValueError("作业文件命名无法唯一识别为“职业规划书”或“专业分析报告”，请检查命名格式。")
 
 
 def get_rule(category: AssignmentCategory) -> AssignmentRule:
     """获取对应作业类型的规则配置。"""
-    return RULES[category]
+    return RULES.get(category) or RULES["generic"]
 
 
 def get_system_prompt() -> str:
@@ -147,18 +180,20 @@ def build_template_prompt(category: AssignmentCategory) -> str:
     """
     config = load_prompt_config()
     if config is not None:
-        cat_cfg = config.categories.get(category.value)
+        cat_cfg = config.categories.get(category)
         if cat_cfg is not None:
-            return render_category_prompt(cat_cfg)
+            # 注意：这里仅作为兜底旧逻辑使用；新逻辑在 grading_service 中会带入 score_target_max 编译。
+            prompt, _expected = build_user_prompt(cat_cfg, score_target_max=60.0)
+            return prompt
 
     prompts = _load_prompts()
-    key = category.value
+    key = category
     custom = prompts.get(key)
     if custom:
         return custom
 
     rule = get_rule(category)
-    if category == AssignmentCategory.CAREER_PLAN:
+    if category == "career_plan":
         detail = (
             "1. 个人情况剖析（约20分）：能否对自身性格、能力、兴趣、价值观进行有逻辑的分析；"
             "2. 职业选择分析（约25分）：是否对目标职业进行充分了解与匹配说明；"
@@ -166,7 +201,7 @@ def build_template_prompt(category: AssignmentCategory) -> str:
             "4. 岗位目标与实施计划（约25分）：是否给出清晰的阶段目标、时间安排与行动路径；"
             "5. 格式与规范（约10分）：结构是否完整、语句是否通顺、是否符合作业格式要求。"
         )
-    elif category == AssignmentCategory.MAJOR_ANALYSIS:
+    elif category == "major_analysis":
         detail = (
             "1. 行业发展分析（约30分）：是否基于可信信息对行业现状与未来趋势做出系统性分析；"
             "2. AI 正负面影响（约30分）：是否能从多个角度分析 AI 技术对行业的积极与消极作用；"

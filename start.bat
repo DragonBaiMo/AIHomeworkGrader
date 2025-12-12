@@ -44,7 +44,7 @@ echo 系统信息:
 echo   - 后端: FastAPI + Uvicorn
 echo   - 前端: Vue3 (Vite 打包后静态托管)
 echo   - 端口: %APP_PORT%
-echo   - 功能: 批量 docx 作业批改与导出
+echo   - 功能: 批量作业文件（docx/Markdown/txt）批改与导出
 echo.
 echo 访问地址:
 echo   - 前端界面: http://localhost:%APP_PORT%

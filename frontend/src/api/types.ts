@@ -5,6 +5,7 @@ export interface GradeConfigPayload {
   template: string;
   mock: boolean;
   skipFormatCheck: boolean;
+  scoreTargetMax: number;
 }
 
 export interface GradeItem {
@@ -12,9 +13,9 @@ export interface GradeItem {
   student_id: string | null;
   student_name: string | null;
   score: number | null;
-  dimension_structure: number | null;
-  dimension_content: number | null;
-  dimension_expression: number | null;
+  score_rubric_max: number | null;
+  score_rubric: number | null;
+  detail_json: string | null;
   comment: string | null;
   status: string;
   error_message: string | null;
@@ -44,8 +45,18 @@ export interface PromptSection {
   items: PromptItem[];
 }
 
+export interface DocxValidationConfig {
+  enabled: boolean;
+  allowed_font_keywords: string[];
+  allowed_font_size_pts: number[];
+  font_size_tolerance?: number;
+  target_line_spacing?: number | null;
+  line_spacing_tolerance?: number | null;
+}
+
 export interface PromptCategory {
   display_name: string;
+  docx_validation?: DocxValidationConfig;
   sections: PromptSection[];
 }
 

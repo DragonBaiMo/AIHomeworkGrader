@@ -16,7 +16,8 @@ class GradeConfig(BaseModel):
     model_name: Optional[str] = Field(None, description="模型名称")
     template: str = Field("职业规划书与专业分析报告的自动分类", description="评分模版或作业类型提示")
     mock: bool = Field(False, description="是否启用离线模拟评分")
-    skip_format_check: bool = Field(False, description="是否跳过文档格式检查")
+    skip_format_check: bool = Field(False, description="是否跳过文档格式校验（仅对 docx 生效）")
+    score_target_max: float = Field(60.0, description="目标满分（用于将评分规则总分按比例换算）")
 
     model_config = {"protected_namespaces": ()}
 
@@ -36,9 +37,9 @@ class GradeItem(BaseModel):
     student_id: Optional[str]
     student_name: Optional[str]
     score: Optional[float]
-    dimension_structure: Optional[int]
-    dimension_content: Optional[int]
-    dimension_expression: Optional[int]
+    score_rubric_max: Optional[float]
+    score_rubric: Optional[float]
+    detail_json: Optional[str]
     comment: Optional[str]
     status: str
     error_message: Optional[str]

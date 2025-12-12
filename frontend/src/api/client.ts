@@ -19,6 +19,7 @@ export async function gradeHomework(files: File[], config: GradeConfigPayload): 
   formData.append("template", config.template);
   formData.append("mock", String(config.mock));
   formData.append("skip_format_check", String(config.skipFormatCheck));
+  formData.append("score_target_max", String(config.scoreTargetMax));
 
   const resp = await fetch(`${API_PREFIX}/grade`, {
     method: "POST",
@@ -57,4 +58,28 @@ export async function savePromptConfig(payload: PromptConfig): Promise<void> {
     const message = data?.detail || "保存提示词配置失败";
     throw new Error(message);
   }
+}
+
+export async function fetchPromptPreview(promptConfig: PromptConfig, categoryKey: string, scoreTargetMax: number): Promise<{ system_prompt: string; user_prompt: string; score_rubric_max: number; score_target_max: number; }> {
+  const resp = await fetch(`${API_PREFIX}/prompt-preview`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      prompt_config: promptConfig,
+      category_key: categoryKey,
+      score_target_max: scoreTargetMax,
+    }),
+  });
+
+  if (!resp.ok) {
+    if (resp.status === 404) {
+      throw new Error("提示词预览接口不存在，请重启后端服务。");
+    }
+    const data = await parseJsonSafe(resp);
+    const message = data?.detail || "获取提示词预览失败";
+    throw new Error(message);
+  }
+  return resp.json();
 }

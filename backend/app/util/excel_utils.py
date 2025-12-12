@@ -27,9 +27,9 @@ class ExcelExporter:
             "学号",
             "姓名",
             "总分",
-            "结构分",
-            "内容分",
-            "表达分",
+            "规则满分",
+            "规则得分",
+            "评分明细",
             "评语",
             "状态",
             "错误描述",
@@ -42,9 +42,9 @@ class ExcelExporter:
                     row.get("student_id"),
                     row.get("student_name"),
                     row.get("score"),
-                    row.get("dimension_structure"),
-                    row.get("dimension_content"),
-                    row.get("dimension_expression"),
+                    row.get("score_rubric_max"),
+                    row.get("score_rubric"),
+                    row.get("detail_json"),
                     row.get("comment"),
                     row.get("status"),
                     row.get("error_message"),
@@ -68,4 +68,3 @@ class ExcelExporter:
         workbook.save(target)
         logger.info("异常清单已生成：%s", target)
         return target
-

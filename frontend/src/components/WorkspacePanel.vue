@@ -19,6 +19,9 @@ const emit = defineEmits<{
 const files = ref<File[]>([]);
 const dragOver = ref(false);
 const hint = ref<string>("");
+const resultFilter = ref<"all" | "success" | "fail">("all");
+const resultQuery = ref<string>("");
+const expandedRows = ref<Set<string>>(new Set());
 
 // --- Icons ---
 const Icons = {
@@ -36,10 +39,40 @@ const fileSummary = computed(() => {
   return `${total} 个文件 · ${sizeMB.toFixed(2)} MB`;
 });
 
+const filteredItems = computed(() => {
+  const items = props.result?.items || [];
+  const query = (resultQuery.value || "").trim();
+  return items.filter((item) => {
+    if (resultFilter.value === "success" && item.status !== "成功") return false;
+    if (resultFilter.value === "fail" && item.status === "成功") return false;
+    if (!query) return true;
+    const hay = `${item.file_name} ${item.student_id || ""} ${item.student_name || ""}`.toLowerCase();
+    return hay.includes(query.toLowerCase());
+  });
+});
+
+function toggleRow(key: string) {
+  const set = expandedRows.value;
+  if (set.has(key)) set.delete(key);
+  else set.add(key);
+  expandedRows.value = new Set(set);
+}
+
+function isRowExpanded(key: string) {
+  return expandedRows.value.has(key);
+}
+
+const SUPPORTED_EXTENSIONS = [".docx", ".md", ".markdown", ".txt"] as const;
+
+function isSupportedFileName(fileName: string): boolean {
+  const lower = fileName.toLowerCase();
+  return SUPPORTED_EXTENSIONS.some((ext) => lower.endsWith(ext));
+}
+
 function updateFiles(list: FileList | File[]) {
-  files.value = Array.from(list).filter((file) => file.name.endsWith(".docx"));
+  files.value = Array.from(list).filter((file) => isSupportedFileName(file.name));
   if (!files.value.length) {
-    hint.value = "系统仅接受 .docx 格式文件";
+    hint.value = "系统仅接受 .docx/.md/.markdown/.txt 格式文件";
     return;
   }
   hint.value = "";
@@ -87,13 +120,16 @@ function updateConfigField<T extends keyof GradeConfigPayload>(key: T, value: Gr
       <div class="control-pill glass">
         <div class="pill-group">
           <label class="pill-label">评估模板</label>
-          <select 
-            class="pill-select"
-            :value="config.template"
-            @change="updateConfigField('template', ($event.target as HTMLSelectElement).value)"
-          >
-            <option v-for="t in templates" :key="t.value" :value="t.value">{{ t.label }}</option>
-          </select>
+          <div class="pill-select-wrap">
+            <select 
+              class="pill-select"
+              :value="config.template"
+              @change="updateConfigField('template', ($event.target as HTMLSelectElement).value)"
+            >
+              <option v-for="t in templates" :key="t.value" :value="t.value">{{ t.label }}</option>
+            </select>
+            <span class="pill-chevron" aria-hidden="true">▾</span>
+          </div>
         </div>
         
         <div class="pill-divider mobile-hide"></div>
@@ -106,7 +142,7 @@ function updateConfigField<T extends keyof GradeConfigPayload>(key: T, value: Gr
               @change="updateConfigField('mock', ($event.target as HTMLInputElement).checked)"
             />
             <span class="toggle-track"></span>
-            <span class="toggle-text">Mock</span>
+            <span class="toggle-text">模拟</span>
           </label>
         </div>
       </div>
@@ -136,7 +172,7 @@ function updateConfigField<T extends keyof GradeConfigPayload>(key: T, value: Gr
         <div class="feedback-text">
           <h3 v-if="loading" class="status-text">AI 正在深度分析...</h3>
           <h3 v-else-if="files.length" class="file-info">{{ fileSummary }}</h3>
-          <h3 v-else class="prompt-text">拖拽 .docx 文件</h3>
+          <h3 v-else class="prompt-text">拖拽作业文件（.docx/.md/.markdown/.txt）</h3>
           
           <p v-if="!loading && !files.length" class="sub-prompt">点击此处或将文件拖入</p>
         </div>
@@ -145,7 +181,7 @@ function updateConfigField<T extends keyof GradeConfigPayload>(key: T, value: Gr
         <div class="action-dock" v-if="!loading">
           <label v-if="!files.length" class="btn primary glow-effect">
             选择文件
-            <input type="file" accept=".docx" multiple hidden @change="onFileChange" />
+            <input type="file" accept=".docx,.md,.markdown,.txt" multiple hidden @change="onFileChange" />
           </label>
           
           <div v-else class="dock-buttons">
@@ -206,6 +242,70 @@ function updateConfigField<T extends keyof GradeConfigPayload>(key: T, value: Gr
         </div>
       </div>
     </Transition>
+
+    <!-- Result List -->
+    <Transition name="slide-up">
+      <div v-if="result" class="result-list card">
+        <div class="list-head">
+          <div class="list-title">批改结果明细</div>
+          <div class="list-actions">
+            <div class="seg">
+              <button class="seg-btn" :class="{ active: resultFilter === 'all' }" @click="resultFilter = 'all'">全部</button>
+              <button class="seg-btn" :class="{ active: resultFilter === 'success' }" @click="resultFilter = 'success'">成功</button>
+              <button class="seg-btn" :class="{ active: resultFilter === 'fail' }" @click="resultFilter = 'fail'">失败</button>
+            </div>
+            <input class="search" type="text" v-model="resultQuery" placeholder="搜索：文件名 / 学号 / 姓名" />
+          </div>
+        </div>
+
+        <div class="table">
+          <div class="row head">
+            <div class="cell file">文件</div>
+            <div class="cell id">学号</div>
+            <div class="cell name">姓名</div>
+            <div class="cell score">最终分</div>
+            <div class="cell rubric">规则分</div>
+            <div class="cell status">状态</div>
+            <div class="cell more">明细</div>
+          </div>
+
+          <div v-for="item in filteredItems" :key="item.file_name" class="row">
+            <div class="cell file mono" :title="item.file_name">{{ item.file_name }}</div>
+            <div class="cell id mono">{{ item.student_id || "-" }}</div>
+            <div class="cell name">{{ item.student_name || "-" }}</div>
+            <div class="cell score mono">
+              <span v-if="item.score !== null">{{ item.score }}</span>
+              <span v-else class="muted">-</span>
+            </div>
+            <div class="cell rubric mono">
+              <span v-if="item.score_rubric !== null && item.score_rubric_max !== null">{{ item.score_rubric }} / {{ item.score_rubric_max }}</span>
+              <span v-else class="muted">-</span>
+            </div>
+            <div class="cell status">
+              <span class="badge" :class="{ ok: item.status === '成功', bad: item.status !== '成功' }">{{ item.status }}</span>
+            </div>
+            <div class="cell more">
+              <button class="link" @click="toggleRow(item.file_name)">{{ isRowExpanded(item.file_name) ? "收起" : "展开" }}</button>
+            </div>
+
+            <div v-if="isRowExpanded(item.file_name)" class="detail">
+              <div v-if="item.status !== '成功'" class="detail-error">
+                <div class="detail-title">失败原因</div>
+                <pre class="detail-text selectable">{{ item.error_message || "未提供错误信息。" }}</pre>
+              </div>
+              <div v-else class="detail-ok">
+                <div class="detail-title">总体评语</div>
+                <pre class="detail-text selectable">{{ item.comment || "未提供评语。" }}</pre>
+                <div class="detail-title">评分明细（原始 JSON）</div>
+                <pre class="detail-text selectable">{{ item.detail_json || "未提供评分明细。" }}</pre>
+              </div>
+            </div>
+          </div>
+
+          <div v-if="!filteredItems.length" class="empty">没有匹配的结果。</div>
+        </div>
+      </div>
+    </Transition>
   </div>
 </template>
 
@@ -242,10 +342,11 @@ function updateConfigField<T extends keyof GradeConfigPayload>(key: T, value: Gr
 .control-pill {
   display: flex;
   align-items: center;
-  padding: 6px 16px;
-  border-radius: 99px; /* Pill on desktop */
-  gap: 16px;
-  height: 48px;
+  padding: 10px 14px;
+  border-radius: var(--radius-l);
+  gap: 18px;
+  min-height: 56px;
+  box-shadow: var(--shadow-card);
 }
 @media (max-width: 600px) {
   .control-pill { border-radius: 12px; height: auto; padding: 12px; }
@@ -259,21 +360,44 @@ function updateConfigField<T extends keyof GradeConfigPayload>(key: T, value: Gr
   justify-content: center;
 }
 .pill-label {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--txt-tertiary);
   font-weight: 600;
   letter-spacing: 0.05em;
   margin-bottom: 2px;
 }
+.pill-select-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  background: var(--bg-hover);
+  border: 1px solid var(--border-dim);
+  border-radius: var(--radius-m);
+  padding: 8px 34px 8px 12px;
+  transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s;
+}
+.pill-select-wrap:focus-within {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px var(--brand-dim);
+  transform: translateY(-1px);
+}
+.pill-chevron {
+  position: absolute;
+  right: 12px;
+  color: var(--txt-tertiary);
+  font-size: 12px;
+  pointer-events: none;
+}
 .pill-select {
+  appearance: none;
   background: transparent;
   border: none;
   color: var(--txt-primary);
-  font-size: 13px;
+  font-size: 14px;
   padding: 0;
-  font-weight: 500;
+  font-weight: 600;
   cursor: pointer;
-  width: 140px;
+  width: 200px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -508,6 +632,91 @@ function updateConfigField<T extends keyof GradeConfigPayload>(key: T, value: Gr
 @media (max-width: 600px) { .download-group { flex-direction: column; width: 100%; } }
 
 .full-width-mobile { width: 100%; justify-content: center; }
+
+/* --- Result List --- */
+.result-list { padding: 0; background: var(--bg-card); overflow: hidden; }
+.list-head {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border-dim);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+.list-title { font-size: 14px; font-weight: 700; color: var(--txt-primary); }
+.list-actions { display: flex; align-items: center; gap: 12px; }
+.search {
+  width: 240px;
+  background: var(--bg-app);
+  border: 1px solid var(--border-dim);
+  border-radius: 10px;
+  padding: 8px 10px;
+  color: var(--txt-primary);
+  font-size: 12px;
+}
+.seg { display: inline-flex; border: 1px solid var(--border-dim); border-radius: 10px; overflow: hidden; }
+.seg-btn {
+  background: transparent;
+  border: none;
+  padding: 8px 10px;
+  font-size: 12px;
+  color: var(--txt-tertiary);
+  cursor: pointer;
+}
+.seg-btn.active { background: var(--bg-active); color: var(--txt-primary); }
+
+.table { width: 100%; }
+.row {
+  display: grid;
+  grid-template-columns: 2.2fr 1fr 1fr 0.8fr 1.1fr 0.7fr 0.6fr;
+  gap: 0;
+  align-items: center;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--border-dim);
+}
+.row.head { background: var(--bg-panel); color: var(--txt-tertiary); font-size: 11px; font-weight: 600; }
+.cell { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cell.mono, .mono { font-family: "JetBrains Mono", monospace; }
+.muted { color: var(--txt-tertiary); }
+.badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  border: 1px solid var(--border-dim);
+}
+.badge.ok { background: var(--success-bg); color: var(--success); border-color: rgba(16,185,129,0.25); }
+.badge.bad { background: var(--error-bg); color: var(--error); border-color: rgba(239,68,68,0.25); }
+.link {
+  background: transparent;
+  border: none;
+  color: var(--brand);
+  cursor: pointer;
+  padding: 0;
+  font-size: 12px;
+}
+.detail {
+  grid-column: 1 / -1;
+  margin-top: 10px;
+  padding: 12px;
+  border: 1px solid var(--border-dim);
+  border-radius: 12px;
+  background: var(--bg-app);
+}
+.detail-title { font-size: 12px; color: var(--txt-tertiary); margin-bottom: 6px; }
+.detail-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--txt-secondary);
+  margin: 0 0 10px 0;
+  font-family: "JetBrains Mono", monospace;
+}
+.detail-text.selectable { user-select: text; }
+.empty { padding: 16px 20px; color: var(--txt-tertiary); font-size: 12px; }
 
 /* Animations */
 @keyframes spin { to { transform: rotate(360deg); } }

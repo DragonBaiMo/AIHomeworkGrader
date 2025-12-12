@@ -1,12 +1,12 @@
 {
-  "system_prompt": "你是一名严格的高校教师，负责批改学生作业。\n\n【通用输出规范】\n1. 你必须只输出一个 JSON 对象，不要输出任何解释文字、不要使用 Markdown 代码块。\n2. 返回结构必须严格如下（字段名、层级、类型都不可更改）：\n{\n  \"score\": 85.5,\n  \"comment\": \"总体评语（≤150字）的中文字符串\",\n  \"dimension\": {\n    \"structure\": 88,\n    \"content\": 90,\n    \"expression\": 82\n  },\n  \"model\": \"moonshotai/Kimi-K2-Thinking\"\n}\n3. 所有分数字段必须是 0-100 范围内的数值（整数或小数），不得为 null、空字符串或非数字。\n4. 不要添加任何额外字段。",
+  "system_prompt": "你是一名严格的高校教师，负责批改学生作业。请依据评分标准逐条细则给分，并说明扣分原因。",
   "categories": {
     "career_plan": {
       "display_name": "职业规划书",
       "sections": [
         {
           "key": "职业缘起与认知",
-          "max_score": 30,
+          "max_score": 30.0,
           "items": [
             {
               "key": "职业缘起",
@@ -32,7 +32,7 @@
         },
         {
           "key": "职业目标与能力基础",
-          "max_score": 50,
+          "max_score": 50.0,
           "items": [
             {
               "key": "学校与专业背景",
@@ -68,7 +68,7 @@
         },
         {
           "key": "动态调整与风险应对",
-          "max_score": 20,
+          "max_score": 20.0,
           "items": [
             {
               "key": "风险评估与应对策略",
@@ -84,7 +84,7 @@
       "sections": [
         {
           "key": "行业与专业匹配的宏观分析",
-          "max_score": 35,
+          "max_score": 35.0,
           "items": [
             {
               "key": "行业现状梳理",
@@ -100,7 +100,7 @@
         },
         {
           "key": "AI 对行业影响的辩证分析",
-          "max_score": 30,
+          "max_score": 30.0,
           "items": [
             {
               "key": "正面影响",
@@ -116,7 +116,7 @@
         },
         {
           "key": "岗位认知与个人职业定位",
-          "max_score": 25,
+          "max_score": 25.0,
           "items": [
             {
               "key": "岗位选择与职责理解",
@@ -132,7 +132,7 @@
         },
         {
           "key": "报告结构与表达规范",
-          "max_score": 10,
+          "max_score": 10.0,
           "items": [
             {
               "key": "结构完整性与论证",
@@ -153,7 +153,7 @@
       "sections": [
         {
           "key": "新评分大项",
-          "max_score": 10,
+          "max_score": 1116.0,
           "items": [
             {
               "key": "评分细则1awsd",
@@ -169,7 +169,7 @@
         },
         {
           "key": "新增评分大项",
-          "max_score": 10,
+          "max_score": 5.0,
           "items": [
             {
               "key": "评分细则awsdwasd",

@@ -37,22 +37,33 @@ async def grade(
     api_url: str | None = Form(default=None, description="模型接口地址"),
     api_key: str | None = Form(default=None, description="API 密钥"),
     model_name: str | None = Form(default=None, description="模型名称"),
-    template: str = Form(default="职业规划", description="作业模板类型"),
+    template: str = Form(default="auto", description="作业模板类型（auto 为自动识别，否则传分类 key）"),
     mock: str = Form(default="false", description="是否使用模拟模式"),
     skip_format_check: str = Form(default="false", description="是否跳过格式检查"),
+    score_target_max: float = Form(default=60.0, description="目标满分（用于将评分规则总分按比例换算）"),
     srv: GradingService = Depends(get_service),
 ) -> GradeResponse:
     """接收文件并执行批改流程。"""
     if not files:
-        raise HTTPException(status_code=400, detail="请至少上传一个 docx 文件")
+        raise HTTPException(status_code=400, detail="请至少上传一个作业文件（.docx/.md/.markdown/.txt）")
     # 前端 FormData 传递布尔值为字符串，需要转换
     is_mock = mock.lower() == "true"
     is_skip_format = skip_format_check.lower() == "true"
+    if score_target_max <= 0:
+        raise HTTPException(status_code=400, detail="目标满分必须大于 0")
     if not is_mock:
         if not api_url:
             raise HTTPException(status_code=400, detail="未填写模型接口地址")
-    config = GradeConfig(api_url=api_url, api_key=api_key, model_name=model_name, template=template, mock=is_mock, skip_format_check=is_skip_format)
-    logger.info("收到批改请求，文件数：%d，模板：%s，mock=%s，skip_format_check=%s (is_skip_format=%s)", len(files), template, mock, skip_format_check, is_skip_format)
+    config = GradeConfig(
+        api_url=api_url,
+        api_key=api_key,
+        model_name=model_name,
+        template=template,
+        mock=is_mock,
+        skip_format_check=is_skip_format,
+        score_target_max=score_target_max,
+    )
+    logger.info("收到批改请求：文件数=%d，模板=%s，模拟模式=%s，跳过格式检查=%s", len(files), template, is_mock, is_skip_format)
     return await srv.process(files, config)
 
 
@@ -87,6 +98,35 @@ async def update_prompt_config(payload: dict = Body(...)) -> JSONResponse:
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     return JSONResponse({"message": "提示词配置已更新"})
+
+
+@router.post("/prompt-preview")
+async def prompt_preview(payload: dict = Body(...)) -> JSONResponse:
+    """返回提示词预览（用于前端低代码编辑即时检查）。"""
+    from app.service.prompt_builder import build_system_prompt, build_user_prompt
+    from app.service.prompt_config import parse_prompt_config
+
+    try:
+        cfg = parse_prompt_config(payload.get("prompt_config") or {})
+        category_key = str(payload.get("category_key") or "").strip()
+        score_target_max = float(payload.get("score_target_max") or 60.0)
+        if not category_key:
+            raise ValueError("category_key 不能为空")
+        cat_cfg = cfg.categories.get(category_key)
+        if cat_cfg is None:
+            raise ValueError("未找到对应分类配置")
+        user_prompt, expected = build_user_prompt(cat_cfg, score_target_max=score_target_max)
+        system_prompt = build_system_prompt(cfg.system_prompt)
+        return JSONResponse(
+            {
+                "system_prompt": system_prompt,
+                "user_prompt": user_prompt,
+                "score_rubric_max": expected.rubric_max,
+                "score_target_max": score_target_max,
+            }
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 router_home = APIRouter()

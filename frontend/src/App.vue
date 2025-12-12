@@ -28,16 +28,17 @@ const THEME_KEY = "ai-grader-theme";
 const { showToast } = useUI();
 const activeTab = ref<TabKey>("workspace");
 const theme = ref<Theme>("dark");
-const statusText = ref("Ready");
+const statusText = ref("就绪");
 const loading = ref(false);
 
 const config = reactive<GradeConfigPayload>({
   apiUrl: "",
   apiKey: "",
   modelName: "",
-  template: "职业规划书与专业分析报告的自动分类",
+  template: "auto",
   mock: false,
   skipFormatCheck: true,
+  scoreTargetMax: 60,
 });
 
 const result = ref<GradeResponse | null>(null);
@@ -47,8 +48,8 @@ const promptSaving = ref(false);
 const promptError = ref("");
 
 const defaultTemplate: TemplateOption = {
-  label: "通用作业分类批改",
-  value: "职业规划书与专业分析报告的自动分类",
+  label: "自动识别",
+  value: "auto",
 };
 const templateOptions = ref<TemplateOption[]>([defaultTemplate]);
 
@@ -87,6 +88,7 @@ function loadFromStorage() {
       template: saved.template || defaultTemplate.value,
       mock: Boolean(saved.mock),
       skipFormatCheck: saved.skipFormatCheck !== false,
+      scoreTargetMax: typeof saved.scoreTargetMax === "number" ? saved.scoreTargetMax : 60,
     });
   } catch { /* ignore */ }
 }
@@ -120,9 +122,9 @@ function rebuildTemplateOptions(cfg: PromptConfig | null) {
   }
   const list = Object.entries(cfg.categories).map(([key, cat]) => ({
     label: cat.display_name || key,
-    value: cat.display_name || key,
+    value: key,
   }));
-  templateOptions.value = list.length ? list : [defaultTemplate];
+  templateOptions.value = [defaultTemplate, ...(list.length ? list : [])];
   
   if (!templateOptions.value.some((t) => t.value === config.template)) {
     config.template = templateOptions.value[0].value;
@@ -132,14 +134,14 @@ function rebuildTemplateOptions(cfg: PromptConfig | null) {
 async function handleGrade(files: File[]) {
   if (loading.value) return;
   loading.value = true;
-  statusText.value = "AI Processing...";
+  statusText.value = "处理中";
   try {
     const resp = await gradeHomework(files, config);
     result.value = resp;
-    statusText.value = "Completed";
+    statusText.value = "已完成";
     showToast(`批改完成！成功处理 ${resp.success_count} 个文件`, "success");
   } catch (err) {
-    statusText.value = "Error";
+    statusText.value = "异常";
     showToast((err as Error).message, "error");
   } finally {
     loading.value = false;
@@ -221,7 +223,7 @@ onMounted(() => {
             class="status-indicator" 
             :class="{ 
               'is-loading': loading, 
-              'is-error': statusText === 'Error' 
+              'is-error': statusText === '异常' 
             }" 
           ></div>
         </div>

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import statistics
+import json
 from pathlib import Path
 from typing import Iterable, List
 
@@ -11,16 +12,18 @@ from fastapi import UploadFile
 
 from app.model.schemas import GradeConfig, GradeItem, GradeResponse
 from app.service.ai_client import AIClient, ModelError
-from app.service.rules import AssignmentCategory, build_template_prompt, detect_assignment_category, get_rule
+from app.service.prompt_builder import build_system_prompt, build_user_prompt
+from app.service.prompt_config import load_prompt_config
+from app.service.rules import AssignmentCategory, detect_assignment_category, get_rule
 from app.util.excel_utils import ExcelExporter
 from app.util.file_utils import (
     FileMeta,
     parse_filename_meta,
     generate_batch_id,
-    parse_docx_text,
+    parse_file_text,
     save_upload_files,
     validate_docx_format,
-    validate_docx,
+    validate_supported_file,
 )
 from app.util.logger import logger
 from config.settings import UPLOAD_DIR
@@ -38,32 +41,55 @@ class GradingService:
         batch_dir, stored_paths = save_upload_files(batch_id, files)
         exporter = ExcelExporter(batch_dir)
         ai_client = AIClient(config.api_url, config.api_key, config.model_name, mock=config.mock)
+        prompt_config = load_prompt_config()
 
         grade_items: List[GradeItem] = []
         error_rows: List[dict] = []
         for file_path in stored_paths:
             try:
-                validate_docx(file_path)
-                if not config.skip_format_check:
-                    validate_docx_format(file_path)
+                validate_supported_file(file_path)
                 meta: FileMeta = parse_filename_meta(file_path.name)
                 category: AssignmentCategory = detect_assignment_category(file_path.name, config.template)
                 rule = get_rule(category)
-                content = parse_docx_text(file_path, min_length=rule.min_length)
+                content = parse_file_text(file_path, min_length=rule.min_length)
                 student_id = meta.student_id
                 student_name = meta.student_name
                 raw_length = len(content)
-                template_prompt = build_template_prompt(category)
-                model_result = await ai_client.grade(content, template_prompt)
+
+                # 提示词编译（低代码：由 UI 配置驱动）
+                if prompt_config is None or category not in prompt_config.categories:
+                    raise ValueError("未找到对应分类的评分规则配置，请先在“评分规则”页面配置并保存。")
+                category_cfg = prompt_config.categories[category]
+                if file_path.suffix.lower() == ".docx" and not config.skip_format_check and category_cfg.docx_validation.enabled:
+                    validate_docx_format(
+                        file_path,
+                        allowed_font_keywords=category_cfg.docx_validation.allowed_font_keywords,
+                        allowed_font_size_pts=category_cfg.docx_validation.allowed_font_size_pts,
+                        font_size_tolerance=category_cfg.docx_validation.font_size_tolerance,
+                        target_line_spacing=category_cfg.docx_validation.target_line_spacing,
+                        line_spacing_tolerance=category_cfg.docx_validation.line_spacing_tolerance,
+                    )
+                user_prompt, expected = build_user_prompt(category_cfg, score_target_max=float(config.score_target_max))
+                system_prompt = build_system_prompt(prompt_config.system_prompt)
+
+                model_result = await ai_client.grade(
+                    content=content,
+                    system_prompt=system_prompt,
+                    template=user_prompt,
+                    expected=expected,
+                    score_target_max=float(config.score_target_max),
+                )
+
+                detail_json = json.dumps(model_result, ensure_ascii=False)
                 grade_items.append(
                     GradeItem(
                         file_name=file_path.name,
                         student_id=student_id,
                         student_name=student_name,
                         score=model_result.get("score"),
-                        dimension_structure=model_result.get("dimension", {}).get("structure"),
-                        dimension_content=model_result.get("dimension", {}).get("content"),
-                        dimension_expression=model_result.get("dimension", {}).get("expression"),
+                        score_rubric_max=model_result.get("score_rubric_max"),
+                        score_rubric=model_result.get("score_rubric"),
+                        detail_json=detail_json,
                         comment=model_result.get("comment"),
                         status="成功",
                         error_message=None,
@@ -78,9 +104,9 @@ class GradingService:
                         student_id=None,
                         student_name=None,
                         score=None,
-                        dimension_structure=None,
-                        dimension_content=None,
-                        dimension_expression=None,
+                        score_rubric_max=None,
+                        score_rubric=None,
+                        detail_json=None,
                         comment=None,
                         status="失败",
                         error_message=str(exc),
@@ -102,9 +128,9 @@ class GradingService:
                         student_id=None,
                         student_name=None,
                         score=None,
-                        dimension_structure=None,
-                        dimension_content=None,
-                        dimension_expression=None,
+                        score_rubric_max=None,
+                        score_rubric=None,
+                        detail_json=None,
                         comment=None,
                         status="失败",
                         error_message=str(exc),

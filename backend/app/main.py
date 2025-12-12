@@ -13,7 +13,7 @@ from app.util.logger import logger
 
 ensure_directories()
 
-app = FastAPI(title="AI 作业批改工具", description="提供批量 docx 批改与导出能力", version="0.1.0")
+app = FastAPI(title="AI 作业批改工具", description="提供批量作业文件（.docx/.md/.markdown/.txt）批改与导出能力", version="0.1.0")
 
 # CORS 设置，便于本地调试
 app.add_middleware(
