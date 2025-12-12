@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from "vue";
 import type { PromptCategory, PromptConfig, PromptSection } from "@/api/types";
+import { useUI } from "@/composables/useUI";
 
 const props = defineProps<{
   config: PromptConfig | null;
@@ -14,6 +15,7 @@ const emit = defineEmits<{
   (e: "save", payload: PromptConfig): void;
 }>();
 
+const { showToast, confirm } = useUI();
 const editable = ref<PromptConfig | null>(null);
 const currentKey = ref<string>("");
 const collapsedModules = reactive(new Set<number>());
@@ -77,10 +79,23 @@ function addCategory() {
 
 function removeCategory(key: string) {
   if (!editable.value) return;
-  if (Object.keys(editable.value.categories).length <= 1) return alert("至少保留一个分类");
-  if (!confirm("确定删除此分类吗？")) return;
-  delete editable.value.categories[key];
-  if (currentKey.value === key) currentKey.value = Object.keys(editable.value.categories)[0];
+  if (Object.keys(editable.value.categories).length <= 1) {
+    showToast("至少保留一个分类", "warning");
+    return;
+  }
+  
+  confirm({
+    title: "删除分类",
+    content: "确定要彻底删除此分类及其所有规则吗？此操作不可恢复。",
+    confirmText: "确认删除",
+    type: "danger",
+    onConfirm: () => {
+      if (!editable.value) return;
+      delete editable.value.categories[key];
+      if (currentKey.value === key) currentKey.value = Object.keys(editable.value.categories)[0];
+      showToast("分类已删除", "success");
+    }
+  });
 }
 
 function addSection() {
@@ -93,7 +108,22 @@ function addItem(section: PromptSection, mIdx: number) {
   expandedItems.add(`${mIdx}-${section.items.length - 1}`);
 }
 function removeItem(section: PromptSection, idx: number) { section.items.splice(idx, 1); }
-function handleSave() { if (editable.value) emit("save", JSON.parse(JSON.stringify(editable.value))); }
+
+// --- Logic: Auto-calculate Score ---
+function getSectionTotal(section: PromptSection) {
+  return section.items.reduce((sum, item) => sum + (Number(item.max_score) || 0), 0);
+}
+
+function handleSave() {
+  if (!editable.value) return;
+  // Auto-calculate section scores before saving
+  Object.values(editable.value.categories).forEach(cat => {
+    cat.sections.forEach(sec => {
+      sec.max_score = getSectionTotal(sec);
+    });
+  });
+  emit("save", JSON.parse(JSON.stringify(editable.value)));
+}
 </script>
 
 <template>
@@ -185,8 +215,9 @@ function handleSave() { if (editable.value) emit("save", JSON.parse(JSON.stringi
                   <input type="text" class="transparent-input title" v-model="section.key" placeholder="维度名称" @click.stop />
                 </div>
                 <div class="head-right" @click.stop>
-                  <span class="tag mobile-hide">满分</span>
-                  <input type="number" class="transparent-input num" v-model.number="section.max_score" />
+                  <span class="tag mobile-hide">总分</span>
+                  <!-- Read-only computed score -->
+                  <div class="score-badge">{{ getSectionTotal(section) }}</div>
                   <span class="divider"></span>
                   <button class="icon-btn danger" @click="removeSection(sIdx)" title="删除维度">
                     <span v-html="Icons.Trash"></span>
@@ -368,7 +399,18 @@ function handleSave() { if (editable.value) emit("save", JSON.parse(JSON.stringi
   font-weight: 600; width: 220px; cursor: text; 
   padding-left: 8px; /* 文字自身再向右微调 */
 }
-.transparent-input.num { width: 40px; text-align: center; color: var(--brand); cursor: text; font-family: "JetBrains Mono"; }
+/* Read-only Score Badge */
+.score-badge {
+  font-family: "JetBrains Mono"; font-weight: 600; font-size: 13px;
+  /* 冷淡的仪表盘风格，区分于可编辑的 Input */
+  color: var(--txt-secondary); 
+  background: var(--bg-active);
+  border: 1px solid var(--border-dim);
+  padding: 4px 12px; 
+  border-radius: 99px; /* 胶囊形，与方形输入框区分 */
+  min-width: 48px; text-align: center;
+  cursor: default; user-select: none;
+}
 .tag { font-size: 12px; color: var(--txt-tertiary); }
 .divider { width: 1px; height: 16px; background: var(--border-dim); margin: 0 4px; }
 

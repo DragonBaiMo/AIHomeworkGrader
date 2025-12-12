@@ -159,14 +159,6 @@ function updateConfigField<T extends keyof GradeConfigPayload>(key: T, value: Gr
       <div v-if="loading" class="loader-overlay">
         <div class="spinner"></div>
       </div>
-
-      <!-- Toast -->
-      <Transition name="fade-up">
-        <div v-if="hint" class="toast-message">
-          <span v-html="Icons.Alert"></span>
-          {{ hint }}
-        </div>
-      </Transition>
     </div>
 
     <!-- Result Dashboard -->

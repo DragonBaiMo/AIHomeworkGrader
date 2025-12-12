@@ -5,6 +5,9 @@ import type { GradeConfigPayload, GradeResponse, PromptConfig, TemplateOption } 
 import WorkspacePanel from "@/components/WorkspacePanel.vue";
 import SettingsPanel from "@/components/SettingsPanel.vue";
 import PromptEditor from "@/components/PromptEditor.vue";
+import GlobalToast from "@/components/ui/GlobalToast.vue";
+import GlobalModal from "@/components/ui/GlobalModal.vue";
+import { useUI } from "@/composables/useUI";
 
 // --- Icons ---
 const Icons = {
@@ -22,6 +25,7 @@ type Theme = "dark" | "light";
 const STORAGE_KEY = "ai-grader-pro-config";
 const THEME_KEY = "ai-grader-theme";
 
+const { showToast } = useUI();
 const activeTab = ref<TabKey>("workspace");
 const theme = ref<Theme>("dark");
 const statusText = ref("Ready");
@@ -133,9 +137,10 @@ async function handleGrade(files: File[]) {
     const resp = await gradeHomework(files, config);
     result.value = resp;
     statusText.value = "Completed";
+    showToast(`批改完成！成功处理 ${resp.success_count} 个文件`, "success");
   } catch (err) {
     statusText.value = "Error";
-    alert((err as Error).message);
+    showToast((err as Error).message, "error");
   } finally {
     loading.value = false;
   }
@@ -147,8 +152,9 @@ async function handleSavePrompt(payload: PromptConfig) {
     await savePromptConfig(payload);
     promptConfig.value = payload;
     rebuildTemplateOptions(payload);
+    showToast("配置已保存", "success");
   } catch (err) {
-    alert((err as Error).message);
+    showToast((err as Error).message, "error");
   } finally {
     promptSaving.value = false;
   }
@@ -246,6 +252,10 @@ onMounted(() => {
         </Transition>
       </div>
     </main>
+
+    <!-- Global UI Layers -->
+    <GlobalToast />
+    <GlobalModal />
   </div>
 </template>
 
