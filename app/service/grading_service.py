@@ -11,12 +11,15 @@ from fastapi import UploadFile
 
 from app.model.schemas import GradeConfig, GradeItem, GradeResponse
 from app.service.ai_client import AIClient, ModelError
+from app.service.rules import AssignmentCategory, build_template_prompt, detect_assignment_category, get_rule
 from app.util.excel_utils import ExcelExporter
 from app.util.file_utils import (
-    extract_student_info,
+    FileMeta,
+    parse_filename_meta,
     generate_batch_id,
     parse_docx_text,
     save_upload_files,
+    validate_docx_format,
     validate_docx,
 )
 from app.util.logger import logger
@@ -41,10 +44,17 @@ class GradingService:
         for file_path in stored_paths:
             try:
                 validate_docx(file_path)
-                content = parse_docx_text(file_path)
-                student_id, student_name = extract_student_info(file_path.name)
+                if not config.skip_format_check:
+                    validate_docx_format(file_path)
+                meta: FileMeta = parse_filename_meta(file_path.name)
+                category: AssignmentCategory = detect_assignment_category(file_path.name, config.template)
+                rule = get_rule(category)
+                content = parse_docx_text(file_path, min_length=rule.min_length)
+                student_id = meta.student_id
+                student_name = meta.student_name
                 raw_length = len(content)
-                model_result = await ai_client.grade(content, config.template)
+                template_prompt = build_template_prompt(category)
+                model_result = await ai_client.grade(content, template_prompt)
                 grade_items.append(
                     GradeItem(
                         file_name=file_path.name,
@@ -143,4 +153,3 @@ class GradingService:
         if file_type == "error":
             return batch_dir / "error_list.xlsx"
         raise FileNotFoundError("不支持的文件类型")
-

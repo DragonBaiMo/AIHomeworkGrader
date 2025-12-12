@@ -14,8 +14,9 @@ class GradeConfig(BaseModel):
     api_url: Optional[str] = Field(None, description="大模型接口地址")
     api_key: Optional[str] = Field(None, description="大模型访问密钥")
     model_name: Optional[str] = Field(None, description="模型名称")
-    template: str = Field("职业规划", description="评分模版")
+    template: str = Field("职业规划书与专业分析报告的自动分类", description="评分模版或作业类型提示")
     mock: bool = Field(False, description="是否启用离线模拟评分")
+    skip_format_check: bool = Field(False, description="是否跳过文档格式检查")
 
     model_config = {"protected_namespaces": ()}
 
@@ -55,4 +56,3 @@ class GradeResponse(BaseModel):
     download_result_url: str
     download_error_url: str
     items: List[GradeItem]
-
