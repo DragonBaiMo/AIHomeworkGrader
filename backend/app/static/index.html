@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>AI Homework Grader Pro</title>
+  <link rel="stylesheet" href="/static/style.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect x=%2220%22 y=%2220%22 width=%2260%22 height=%2260%22 rx=%2216%22 fill=%22%231A1A1A%22/><circle cx=%2270%22 cy=%2230%22 r=%226%22 fill=%22%2300C853%22/></svg>">
+  <link rel="preconnect" href="https://fonts.system-ui.com" />
+</head>
+<body>
+
+  <div class="app-shell">
+    
+    <!-- === Sidebar: 导航中枢 === -->
+    <nav class="sidebar">
+      <div class="sidebar-header">
+        <div class="logo-mark">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+        </div>
+        <div class="app-name">AI Grader <span class="badge">PRO</span></div>
+      </div>
+
+      <div class="nav-group">
+        <div class="nav-label">工作台</div>
+        <button class="nav-item active" data-view="view-workspace">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+          作业批改
+        </button>
+        <button class="nav-item" data-view="view-settings">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1.29 1.29 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          参数配置
+        </button>
+      </div>
+
+      <div class="nav-group">
+        <div class="nav-label">高级管理</div>
+        <button class="nav-item" data-view="view-rules">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+          评分标准库
+        </button>
+      </div>
+
+      <div class="sidebar-footer">
+        <div class="status-dot online"></div>
+        <div class="status-label">System Online</div>
+      </div>
+    </nav>
+
+    <!-- === Main Content: 视图容器 === -->
+    <main class="main-content">
+      
+      <!-- VIEW 1: 作业批改 (默认) -->
+      <div id="view-workspace" class="view-section active">
+        <header class="view-header">
+          <h2>批改工作台</h2>
+          <p>导入文档，启动 AI 自动化分析。</p>
+        </header>
+
+        <div class="workspace-grid">
+          <!-- 上传区 -->
+          <div class="upload-container card">
+             <div class="drop-zone" id="dropZone">
+                <input type="file" id="fileInput" multiple accept=".docx" style="display:none;" />
+                <div class="drop-illustration">
+                  <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                </div>
+                <h3>将文件拖放到此处</h3>
+                <p>支持批量导入 .docx 格式作业</p>
+                <button class="btn-secondary" id="browseBtn">选择文件</button>
+             </div>
+             <div class="file-status-bar" id="fileStatusBar">
+               <span id="fileInfo">等待文件导入...</span>
+             </div>
+          </div>
+
+          <!-- 动作与结果区 -->
+          <div class="action-container">
+            <div class="card status-card">
+               <div class="status-header">
+                 <h3>任务控制</h3>
+                 <div id="statusText" class="status-badge ready">READY</div>
+               </div>
+               
+               <div class="progress-track hidden" id="progress">
+                 <div class="progress-fill" id="progressBar"></div>
+               </div>
+
+               <button id="startBtn" class="btn-primary btn-lg">
+                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                 开始批改
+               </button>
+            </div>
+
+            <!-- 结果面板 (默认隐藏) -->
+            <div id="summaryCard" class="card result-card hidden">
+              <div class="result-header">
+                <h3>批改结果</h3>
+                <div class="score-display">
+                  <span class="label">平均分</span>
+                  <span class="value" id="avgScoreDisplay">--</span>
+                </div>
+              </div>
+              <div class="result-metrics" id="summary">
+                <!-- JS 填充 -->
+              </div>
+              <div class="result-actions" id="downloadLinks">
+                 <a id="resultLink" class="btn-ghost primary" href="#" download>下载成绩单</a>
+                 <a id="errorLink" class="btn-ghost danger" href="#" download>下载异常日志</a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- VIEW 2: 参数配置 -->
+      <div id="view-settings" class="view-section">
+        <header class="view-header">
+          <h2>系统参数配置</h2>
+          <p>配置大模型连接与批改行为参数。</p>
+        </header>
+
+        <div class="settings-container card">
+           <div class="setting-group">
+             <label>API Endpoint</label>
+             <input type="text" id="apiUrl" class="input-lg" placeholder="https://api.siliconflow.cn/v1/chat/completions" />
+             <p class="help-text">大语言模型服务接口地址。</p>
+           </div>
+
+           <div class="setting-group">
+             <label>Secret Key (API Key)</label>
+             <input type="password" id="apiKey" class="input-lg" placeholder="sk-..." />
+           </div>
+
+           <div class="setting-group">
+             <label>Model Name</label>
+             <input type="text" id="modelName" class="input-lg" placeholder="moonshotai/Kimi-K2-Thinking" />
+           </div>
+
+           <div class="divider"></div>
+
+           <div class="setting-group">
+             <label>作业类型模板</label>
+             <div class="select-wrapper">
+               <select id="template" class="input-lg">
+                 <option value="职业规划书与专业分析报告的自动分类">职业规划书与专业分析报告的自动分类</option>
+               </select>
+             </div>
+           </div>
+
+           <div class="setting-toggles">
+             <label class="toggle-row">
+               <div class="toggle-info">
+                 <span class="toggle-title">跳过格式检查</span>
+                 <span class="toggle-desc">仅关注内容质量，忽略文档排版问题。</span>
+               </div>
+               <div class="toggle-switch">
+                 <input type="checkbox" id="skipFormatCheck" checked />
+                 <span class="slider"></span>
+               </div>
+             </label>
+
+             <label class="toggle-row">
+               <div class="toggle-info">
+                 <span class="toggle-title">开发者模拟模式 (Mock Mode)</span>
+                 <span class="toggle-desc">不消耗 Token，仅返回测试数据。</span>
+               </div>
+               <div class="toggle-switch">
+                 <input type="checkbox" id="mockMode" />
+                 <span class="slider"></span>
+               </div>
+             </label>
+           </div>
+        </div>
+      </div>
+
+      <!-- VIEW 3: 评分标准 (嵌入式) -->
+      <div id="view-rules" class="view-section">
+        <header class="view-header">
+          <h2>评分标准编辑器</h2>
+          <p>低代码配置作业评分维度与细则。</p>
+          <div class="header-actions">
+            <button id="refreshRulesBtn" class="btn-secondary small">重置</button>
+            <button id="savePromptConfig" class="btn-primary small">保存变更</button>
+          </div>
+          <div id="promptSaveStatus" class="status-toast"></div>
+        </header>
+
+        <div class="rules-editor-layout">
+           <div class="card category-selector-card">
+              <label>选择作业类型</label>
+              <select id="promptCategory" class="input-md"></select>
+           </div>
+
+           <div id="sectionsContainer" class="rules-container">
+             <!-- JS 动态渲染 -->
+           </div>
+
+           <button id="addSectionBtn" class="btn-dashed">+ 添加新的评分大项</button>
+        </div>
+      </div>
+
+    </main>
+  </div>
+
+  <script src="/static/script.js"></script>
+</body>
+</html>
