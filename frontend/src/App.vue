@@ -24,17 +24,29 @@ type Theme = "dark" | "light";
 
 const STORAGE_KEY = "ai-grader-pro-config";
 const THEME_KEY = "ai-grader-theme";
+const WORKSPACE_STATE_KEY = "ai-grader-workspace-state-v1";
 
 const { showToast } = useUI();
 const activeTab = ref<TabKey>("workspace");
 const theme = ref<Theme>("dark");
 const statusText = ref("就绪");
 const loading = ref(false);
+const gradeSessionId = ref(0);
+
+type WorkspaceCachePayload = {
+  version: 1;
+  savedAt: number;
+  inProgress: boolean;
+  statusText: string;
+  result: GradeResponse | null;
+};
 
 const config = reactive<GradeConfigPayload>({
   apiUrl: "",
   apiKey: "",
   modelName: "",
+  multiEnabled: false,
+  models: [],
   template: "auto",
   mock: false,
   skipFormatCheck: true,
@@ -88,6 +100,57 @@ function loadPromptSettings() {
   }
 }
 
+function sanitizeResultForCache(payload: GradeResponse): GradeResponse {
+  return {
+    ...payload,
+    items: (payload.items || []).map((item) => ({
+      ...item,
+      raw_response: null,
+    })),
+  };
+}
+
+function persistWorkspaceState(inProgress: boolean) {
+  const payload: WorkspaceCachePayload = {
+    version: 1,
+    savedAt: Date.now(),
+    inProgress,
+    statusText: statusText.value,
+    result: result.value ? sanitizeResultForCache(result.value) : null,
+  };
+  try {
+    localStorage.setItem(WORKSPACE_STATE_KEY, JSON.stringify(payload));
+  } catch {
+    showToast("批改结果过大，无法缓存到本地存储。", "warning");
+  }
+}
+
+function clearWorkspaceState() {
+  result.value = null;
+  statusText.value = "就绪";
+  localStorage.removeItem(WORKSPACE_STATE_KEY);
+}
+
+function loadWorkspaceState() {
+  const cache = localStorage.getItem(WORKSPACE_STATE_KEY);
+  if (!cache) return;
+  try {
+    const parsed = JSON.parse(cache) as WorkspaceCachePayload;
+    if (parsed.version !== 1) return;
+    if (parsed.result) result.value = parsed.result;
+    if (typeof parsed.statusText === "string" && parsed.statusText.trim()) {
+      statusText.value = parsed.statusText;
+    }
+    if (parsed.inProgress) {
+      statusText.value = "上次批改在页面刷新时被中断，请重新点击开始批改。";
+      showToast(statusText.value, "warning");
+      persistWorkspaceState(false);
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
 // --- Theme Logic ---
 function toggleTheme() {
   theme.value = theme.value === "dark" ? "light" : "dark";
@@ -116,6 +179,14 @@ function loadFromStorage() {
       apiUrl: saved.apiUrl || "",
       apiKey: saved.apiKey || "",
       modelName: saved.modelName || "",
+      multiEnabled: Boolean(saved.multiEnabled),
+      models: Array.isArray(saved.models) && saved.models.length
+        ? saved.models.map((m: any) => ({
+            api_url: String(m?.api_url || ""),
+            api_key: String(m?.api_key || ""),
+            model_name: String(m?.model_name || ""),
+          }))
+        : [],
       template: saved.template || defaultTemplate.value,
       mock: Boolean(saved.mock),
       skipFormatCheck: saved.skipFormatCheck !== false,
@@ -210,17 +281,24 @@ function rebuildTemplateOptions(cfg: PromptConfig | null) {
 
 async function handleGrade(files: File[]) {
   if (loading.value) return;
+  const currentSession = bumpGradeSession();
   loading.value = true;
   statusText.value = "处理中";
+  persistWorkspaceState(true);
   try {
     const resp = await gradeHomework(files, config);
+    if (currentSession !== gradeSessionId.value) return;
     result.value = resp;
     statusText.value = "已完成";
+    persistWorkspaceState(false);
     showToast(`批改完成！成功处理 ${resp.success_count} 个文件`, "success");
   } catch (err) {
+    if (currentSession !== gradeSessionId.value) return;
     statusText.value = "异常";
+    persistWorkspaceState(false);
     showToast((err as Error).message, "error");
   } finally {
+    if (currentSession !== gradeSessionId.value) return;
     loading.value = false;
   }
 }
@@ -239,10 +317,62 @@ async function handleSavePrompt(payload: PromptConfig) {
   }
 }
 
+function bumpGradeSession(): number {
+  gradeSessionId.value += 1;
+  return gradeSessionId.value;
+}
+
+function resetConfigToDefaults() {
+  updateConfig({
+    apiUrl: "",
+    apiKey: "",
+    modelName: "",
+    multiEnabled: false,
+    models: [
+      {
+        api_url: "",
+        api_key: "",
+        model_name: "",
+      },
+    ],
+    template: defaultTemplate.value,
+    mock: false,
+    skipFormatCheck: true,
+    scoreTargetMax: 60,
+  });
+}
+
+function resetPromptSettingsToDefaults() {
+  promptSettings.autoSaveEnabled = true;
+  promptSettings.autoSaveIntervalSeconds = 60;
+}
+
+function clearAllLocalCache() {
+  if (!window.confirm("确定要清除本地缓存吗？这将清空批改结果与本地配置。")) return;
+
+  bumpGradeSession();
+  loading.value = false;
+  statusText.value = "就绪";
+  result.value = null;
+
+  try {
+    localStorage.removeItem(WORKSPACE_STATE_KEY);
+    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(PROMPT_SETTINGS_KEY);
+  } catch {
+    /* ignore */
+  }
+
+  resetConfigToDefaults();
+  resetPromptSettingsToDefaults();
+  showToast("本地缓存已清除", "success");
+}
+
 onMounted(() => {
   initTheme();
   loadFromStorage();
   loadPromptSettings();
+  loadWorkspaceState();
   loadPromptConfig();
 });
 </script>
@@ -314,6 +444,8 @@ onMounted(() => {
               :result="result"
               :status-text="statusText"
               @submit="handleGrade"
+              @clear-result="clearWorkspaceState"
+              @clear-all-cache="clearAllLocalCache"
               @request-settings="activeTab = 'settings'"
               @update:config="updateConfig"
             />

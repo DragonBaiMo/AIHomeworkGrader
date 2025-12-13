@@ -45,14 +45,17 @@ class AuditLogger:
         user_prompt: str,
         response: dict[str, Any],
         *,
+        model_id: str | None = None,
         resolved_user_prompt: str | None = None,
         raw_response: str | None = None,
         status: str = "success",
     ) -> None:
         safe_name = file_name.replace(" ", "_")
-        target = self.responses_dir / f"{safe_name}_{datetime.utcnow().strftime('%H%M%S')}.json"
+        suffix = f"_{model_id}" if model_id else ""
+        target = self.responses_dir / f"{safe_name}{suffix}_{datetime.utcnow().strftime('%H%M%S')}.json"
         interaction = {
             "file": file_name,
+            "model_id": model_id,
             "system_prompt": system_prompt,
             "user_prompt": user_prompt,
             "resolved_user_prompt": resolved_user_prompt,

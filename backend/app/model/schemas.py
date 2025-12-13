@@ -8,12 +8,23 @@ from typing import List, Optional
 from pydantic import BaseModel, Field
 
 
+class ModelEndpoint(BaseModel):
+    """单个模型端点配置（支持多模型批改）。"""
+
+    api_url: str = Field(..., description="大模型接口地址")
+    api_key: Optional[str] = Field(None, description="大模型访问密钥")
+    model_name: str = Field(..., description="模型名称")
+
+    model_config = {"protected_namespaces": ()}
+
+
 class GradeConfig(BaseModel):
     """评分配置输入模型。"""
 
     api_url: Optional[str] = Field(None, description="大模型接口地址")
     api_key: Optional[str] = Field(None, description="大模型访问密钥")
     model_name: Optional[str] = Field(None, description="模型名称")
+    models: Optional[List[ModelEndpoint]] = Field(None, description="追加模型端点配置（最多 2 个，不含默认模型）")
     template: str = Field("职业规划书与专业分析报告的自动分类", description="评分模版或作业类型提示")
     mock: bool = Field(False, description="是否启用离线模拟评分")
     skip_format_check: bool = Field(False, description="是否跳过文档格式校验（仅对 docx 生效）")
@@ -45,6 +56,8 @@ class GradeItem(BaseModel):
     error_message: Optional[str]
     raw_text_length: int
     raw_response: Optional[str] = None
+    aggregate_strategy: Optional[str] = None
+    grader_results: Optional[list[dict]] = None
 
 
 class GradeResponse(BaseModel):

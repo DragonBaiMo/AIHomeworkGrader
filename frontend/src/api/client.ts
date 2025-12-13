@@ -16,6 +16,16 @@ export async function gradeHomework(files: File[], config: GradeConfigPayload): 
   formData.append("api_url", config.apiUrl);
   formData.append("api_key", config.apiKey);
   formData.append("model_name", config.modelName);
+  if (config.multiEnabled) {
+    const models = (config.models || []).slice(0, 2).map((m) => ({
+      api_url: m.api_url || "",
+      api_key: m.api_key || "",
+      model_name: m.model_name || "",
+    }));
+    if (models.length > 0) {
+      formData.append("models", JSON.stringify(models));
+    }
+  }
   formData.append("template", config.template);
   formData.append("mock", String(config.mock));
   formData.append("skip_format_check", String(config.skipFormatCheck));

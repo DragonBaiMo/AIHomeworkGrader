@@ -27,6 +27,46 @@ function handleChange<T extends keyof GradeConfigPayload>(key: T, value: GradeCo
   emit("update:config", { [key]: value });
 }
 
+function handleToggleMulti(enabled: boolean) {
+  handleChange("multiEnabled", enabled as any);
+  if (enabled) {
+    const models = Array.isArray(localConfig.value.models) ? [...localConfig.value.models] : [];
+    if (models.length === 0) {
+      models.push({ api_url: "", api_key: "", model_name: "" });
+      localConfig.value.models = models;
+      emit("update:config", { models });
+    }
+  }
+}
+
+function handleModelChange(index: number, key: "api_url" | "api_key" | "model_name", value: string) {
+  const models = Array.isArray(localConfig.value.models) ? [...localConfig.value.models] : [];
+  while (models.length <= index) {
+    models.push({ api_url: "", api_key: "", model_name: "" });
+  }
+  const current = { ...(models[index] as any) };
+  current[key] = value;
+  models[index] = current;
+  localConfig.value.models = models;
+  emit("update:config", { models });
+}
+
+function addModelRow() {
+  const models = Array.isArray(localConfig.value.models) ? [...localConfig.value.models] : [];
+  if (models.length >= 2) return;
+  models.push({ api_url: "", api_key: "", model_name: "" });
+  localConfig.value.models = models;
+  emit("update:config", { models });
+}
+
+function removeModelRow(index: number) {
+  const models = Array.isArray(localConfig.value.models) ? [...localConfig.value.models] : [];
+  if (models.length <= 1) return;
+  models.splice(index, 1);
+  localConfig.value.models = models;
+  emit("update:config", { models });
+}
+
 function handlePromptSetting<T extends keyof PromptSettings>(key: T, value: PromptSettings[T]) {
   emit("update:promptSettings", { [key]: value });
 }
@@ -54,6 +94,90 @@ function handlePromptSetting<T extends keyof PromptSettings>(key: T, value: Prom
       <div class="card-body">
         
         <div class="input-section">
+          <div class="toggle-section" style="margin-bottom: 18px;">
+            <div class="toggle-info">
+              <span class="toggle-title">多模型批改</span>
+              <span class="toggle-desc">默认模型 + 追加模型（最多 2 个）；同一 Base URL 并发限制由后端控制</span>
+            </div>
+            <label class="ios-switch">
+              <input
+                type="checkbox"
+                :checked="localConfig.multiEnabled"
+                @change="handleToggleMulti(($event.target as HTMLInputElement).checked)"
+              />
+              <div class="switch-body">
+                <div class="switch-knob"></div>
+              </div>
+            </label>
+          </div>
+
+          <div v-if="localConfig.multiEnabled" class="input-group" style="margin-bottom: 8px;">
+            <label class="field-label">追加模型（最多 2 个）</label>
+            <div class="sub" style="margin-top: 6px; color: var(--txt-tertiary); font-size: 12px;">
+              说明：默认模型仍使用下方“系统连接”的配置；这里仅追加额外模型；Key 不会写入日志与 Excel 明文。
+            </div>
+          </div>
+
+          <div v-if="localConfig.multiEnabled" class="multi-model-list">
+            <div v-for="(m, idx) in (localConfig.models || [])" :key="idx" class="multi-model-card">
+              <div class="multi-model-header">
+                <div class="multi-model-title">追加模型 {{ idx + 1 }}</div>
+                <button v-if="(localConfig.models || []).length > 1" class="bento-btn ghost small" type="button" @click="removeModelRow(idx)">
+                  删除
+                </button>
+              </div>
+              <div class="input-group">
+                <label class="field-label">API 端点</label>
+                <div class="input-wrapper">
+                  <input
+                    type="text"
+                    class="modern-input font-mono"
+                    :value="m.api_url"
+                    @input="handleModelChange(idx, 'api_url', ($event.target as HTMLInputElement).value)"
+                    placeholder="http://127.0.0.1:11434/v1/chat/completions"
+                  />
+                  <div class="focus-ring"></div>
+                </div>
+              </div>
+              <div class="input-group">
+                <label class="field-label">API 密钥</label>
+                <div class="input-wrapper">
+                  <input
+                    type="password"
+                    class="modern-input font-mono"
+                    :value="m.api_key"
+                    @input="handleModelChange(idx, 'api_key', ($event.target as HTMLInputElement).value)"
+                    placeholder="sk-..."
+                  />
+                  <div class="focus-ring"></div>
+                </div>
+              </div>
+              <div class="input-group">
+                <label class="field-label">模型名称</label>
+                <div class="input-wrapper">
+                  <input
+                    type="text"
+                    class="modern-input font-mono"
+                    :value="m.model_name"
+                    @input="handleModelChange(idx, 'model_name', ($event.target as HTMLInputElement).value)"
+                    placeholder="gpt-4o"
+                  />
+                  <div class="focus-ring"></div>
+                </div>
+              </div>
+            </div>
+
+            <button
+              v-if="(localConfig.models || []).length < 2"
+              class="bento-btn ghost"
+              type="button"
+              style="width: 100%; margin-top: 8px;"
+              @click="addModelRow"
+            >
+              添加模型
+            </button>
+          </div>
+
           <div class="input-group">
             <label class="field-label">API 端点 <span class="sub">(Base URL)</span></label>
             <div class="input-wrapper">
@@ -241,6 +365,33 @@ function handlePromptSetting<T extends keyof PromptSettings>(key: T, value: Prom
   display: flex;
   flex-direction: column;
   gap: 20px;
+}
+
+.multi-model-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.multi-model-card {
+  border: 1px solid var(--border-dim);
+  border-radius: var(--radius-lg);
+  padding: 14px 14px 6px 14px;
+  background: var(--bg-active);
+}
+
+.multi-model-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.multi-model-title {
+  font-weight: 700;
+  color: var(--txt-primary);
+  font-size: 13px;
 }
 
 .input-group {

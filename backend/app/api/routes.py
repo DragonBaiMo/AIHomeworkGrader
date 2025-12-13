@@ -10,7 +10,7 @@ from typing import List
 from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
-from app.model.schemas import GradeConfig, GradeResponse
+from app.model.schemas import GradeConfig, GradeResponse, ModelEndpoint
 from app.service.grading_service import GradingService
 from app.service.prompt_config import PROMPT_CONFIG_PATH, load_prompt_config, save_prompt_config
 from app.util.logger import logger
@@ -37,6 +37,7 @@ async def grade(
     api_url: str | None = Form(default=None, description="模型接口地址"),
     api_key: str | None = Form(default=None, description="API 密钥"),
     model_name: str | None = Form(default=None, description="模型名称"),
+    models: str | None = Form(default=None, description="追加模型配置 JSON（数组，每项包含 api_url/api_key/model_name，最多 2 个）"),
     template: str = Form(default="auto", description="作业模板类型（auto 为自动识别，否则传分类 key）"),
     mock: str = Form(default="false", description="是否使用模拟模式"),
     skip_format_check: str = Form(default="false", description="是否跳过格式检查"),
@@ -52,12 +53,44 @@ async def grade(
     if score_target_max <= 0:
         raise HTTPException(status_code=400, detail="目标满分必须大于 0")
     if not is_mock:
-        if not api_url:
+        if not models and not api_url:
             raise HTTPException(status_code=400, detail="未填写模型接口地址")
+
+    parsed_models: list[ModelEndpoint] | None = None
+    if models:
+        try:
+            raw = json.loads(models)
+        except Exception:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail="多模型配置 JSON 解析失败，请检查格式。")
+        if not isinstance(raw, list) or not raw:
+            raise HTTPException(status_code=400, detail="多模型配置必须为非空数组。")
+        if len(raw) > 2:
+            raw = raw[:2]
+        parsed_models = []
+        for idx, item in enumerate(raw, start=1):
+            if not isinstance(item, dict):
+                raise HTTPException(status_code=400, detail=f"多模型配置第 {idx} 项必须为对象。")
+            try:
+                endpoint = ModelEndpoint(
+                    api_url=str(item.get("api_url") or "").strip(),
+                    api_key=(str(item.get("api_key")).strip() if item.get("api_key") is not None else None),
+                    model_name=str(item.get("model_name") or "").strip(),
+                )
+            except Exception:  # noqa: BLE001
+                raise HTTPException(status_code=400, detail=f"多模型配置第 {idx} 项字段不合法，请检查 api_url/model_name。")
+            if not is_mock:
+                if not endpoint.api_url:
+                    raise HTTPException(status_code=400, detail=f"多模型配置第 {idx} 项未填写 api_url。")
+                if not (endpoint.api_url.startswith("http://") or endpoint.api_url.startswith("https://")):
+                    raise HTTPException(status_code=400, detail=f"多模型配置第 {idx} 项 api_url 必须以 http:// 或 https:// 开头。")
+            if not endpoint.model_name:
+                raise HTTPException(status_code=400, detail=f"多模型配置第 {idx} 项未填写 model_name。")
+            parsed_models.append(endpoint)
     config = GradeConfig(
         api_url=api_url,
         api_key=api_key,
         model_name=model_name,
+        models=parsed_models,
         template=template,
         mock=is_mock,
         skip_format_check=is_skip_format,

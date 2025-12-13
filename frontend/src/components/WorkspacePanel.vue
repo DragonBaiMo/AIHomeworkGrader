@@ -14,6 +14,8 @@ const emit = defineEmits<{
   (e: "submit", files: File[]): void;
   (e: "request-settings"): void;
   (e: "update:config", payload: Partial<GradeConfigPayload>): void;
+  (e: "clear-result"): void;
+  (e: "clear-all-cache"): void;
 }>();
 
 const files = ref<File[]>([]);
@@ -43,6 +45,7 @@ const Icons = {
   Doc: `<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>`,
   Check: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`,
   Download: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`,
+  Trash: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>`,
   Alert: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>`,
   ChevronDown: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>`,
   Search: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>`
@@ -169,6 +172,14 @@ function downloadResultExcel() {
   window.location.href = url;
 }
 
+function clearResult() {
+  emit("clear-result");
+}
+
+function clearAllCache() {
+  emit("clear-all-cache");
+}
+
 function updateConfigField<T extends keyof GradeConfigPayload>(key: T, value: GradeConfigPayload[T]) {
   emit("update:config", { [key]: value } as Partial<GradeConfigPayload>);
 }
@@ -181,6 +192,10 @@ function updateConfigField<T extends keyof GradeConfigPayload>(key: T, value: Gr
       <div class="header-titles">
         <h1 class="page-title">智能批改台</h1>
         <p class="page-subtitle">AI Automated Assessment System</p>
+      </div>
+
+      <div class="header-actions">
+        <button class="bento-btn danger" type="button" @click="clearAllCache">一键清除缓存</button>
       </div>
     </header>
 
@@ -313,6 +328,9 @@ function updateConfigField<T extends keyof GradeConfigPayload>(key: T, value: Gr
           </div>
           <div class="bento-card action-cell">
              <div class="action-stack">
+                <button class="bento-icon-btn" title="清空批改结果" @click="clearResult">
+                   <span v-html="Icons.Trash"></span>
+                </button>
                 <button class="bento-icon-btn" title="下载 Excel" @click="downloadResultExcel">
                    <span v-html="Icons.Download"></span>
                 </button>
@@ -403,6 +421,35 @@ function updateConfigField<T extends keyof GradeConfigPayload>(key: T, value: Gr
                     </div>
 
                     <div v-else class="rubric-grid">
+                      <div v-if="item.grader_results && item.grader_results.length" class="model-result-panel">
+                        <div class="model-result-title">
+                          多模型批改明细（聚合算法：{{ item.aggregate_strategy || 'median' }}）
+                        </div>
+                        <div class="model-result-sub">
+                          汇总分：{{ item.display_score ?? '-' }} / {{ config.scoreTargetMax }}
+                        </div>
+                        <div class="model-result-table">
+                          <div class="model-result-row header">
+                            <div class="c-name">模型</div>
+                            <div class="c-url">接口</div>
+                            <div class="c-score">分数</div>
+                            <div class="c-lat">耗时ms</div>
+                            <div class="c-status">状态</div>
+                            <div class="c-err">错误</div>
+                          </div>
+                          <div v-for="(m, mi) in item.grader_results" :key="mi" class="model-result-row">
+                            <div class="c-name">{{ m.model_name || `模型${m.model_index || (mi + 1)}` }}</div>
+                            <div class="c-url" :title="m.api_url || ''">{{ m.api_url || '-' }}</div>
+                            <div class="c-score">{{ m.score ?? '-' }}</div>
+                            <div class="c-lat">{{ m.latency_ms ?? '-' }}</div>
+                            <div class="c-status">
+                              <span class="status-dot" :class="m.status === '成功' ? 'ok' : 'err'"></span>
+                              {{ m.status || '-' }}
+                            </div>
+                            <div class="c-err" :title="m.error_message || ''">{{ m.error_message || '-' }}</div>
+                          </div>
+                        </div>
+                      </div>
                       <div 
                         v-for="(rItem, idx) in item.rubric_items" 
                         :key="idx"

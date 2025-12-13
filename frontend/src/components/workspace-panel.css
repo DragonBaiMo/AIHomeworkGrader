@@ -23,6 +23,10 @@
   position: relative;
 }
 
+ .header-actions {
+   margin-top: 16px;
+ }
+
 .header-titles .page-title {
   font-size: 36px;
   font-weight: 800;
@@ -243,6 +247,17 @@
   transform: translateY(1px) scale(0.98); 
   box-shadow: 0 2px 4px rgba(var(--brand-rgb), 0.2); 
 }
+
+ .bento-btn.danger {
+   background: rgba(var(--error-rgb), 0.12);
+   border-color: rgba(var(--error-rgb), 0.35);
+   color: var(--error);
+ }
+ .bento-btn.danger:hover {
+   background: rgba(var(--error-rgb), 0.18);
+   border-color: rgba(var(--error-rgb), 0.5);
+   transform: translateY(-1px);
+ }
 
 .bento-btn.ghost {
   background: transparent;
@@ -713,6 +728,58 @@ input:checked ~ .switch-track .switch-thumb { transform: translateX(20px); }
   border: 1px solid rgba(var(--error-rgb), 0.15);
 }
 .error-title { display: flex; align-items: center; gap: 12px; font-weight: 700; font-size: 16px; }
+
+.model-result-panel {
+  grid-column: 1 / -1;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-dim);
+  border-radius: 16px;
+  padding: 20px 20px 16px 20px;
+}
+.model-result-title {
+  font-weight: 800;
+  color: var(--txt-primary);
+  font-size: 14px;
+  margin-bottom: 6px;
+}
+.model-result-sub {
+  color: var(--txt-tertiary);
+  font-size: 12px;
+  margin-bottom: 12px;
+}
+.model-result-table {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.model-result-row {
+  display: grid;
+  grid-template-columns: 1.2fr 2.2fr 0.7fr 0.8fr 0.8fr 1.6fr;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border-dim);
+  background: var(--bg-app);
+}
+.model-result-row.header {
+  background: rgba(0,0,0,0.02);
+  border-style: dashed;
+  font-weight: 800;
+  color: var(--txt-tertiary);
+  font-size: 12px;
+}
+.model-result-row .c-url,
+.model-result-row .c-err {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.model-result-row .c-score,
+.model-result-row .c-lat {
+  font-family: 'JetBrains Mono';
+  font-weight: 700;
+}
 
 .rubric-grid {
   display: grid;

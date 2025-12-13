@@ -17,9 +17,10 @@ from app.util.logger import logger
 class ModelError(Exception):
     """大模型调用异常。"""
 
-    def __init__(self, message: str, *, raw_response: str | None = None) -> None:
+    def __init__(self, message: str, *, raw_response: str | None = None, kind: str = "unknown") -> None:
         super().__init__(message)
         self.raw_response = raw_response
+        self.kind = kind
 
 
 class AIClient:
@@ -62,31 +63,47 @@ class AIClient:
             "temperature": 0.2,
         }
         last_exc: Optional[Exception] = None
+        last_raw: Optional[str] = None
+        last_kind: str = "unknown"
         for attempt in range(3):
             try:
                 async with httpx.AsyncClient(timeout=DEFAULT_MODEL_TIMEOUT) as client:
                     resp = await client.post(self.api_url, json=payload, headers=headers)
                     resp.raise_for_status()
                     data = resp.json()
-                break
+
+                try:
+                    content_text = data["choices"][0]["message"]["content"]
+                except Exception as exc:  # noqa: BLE001
+                    last_raw = json.dumps(data, ensure_ascii=False)
+                    last_kind = "parse"
+                    raise ValueError("模型返回结构异常，缺少 choices.message.content 字段") from exc
+
+                try:
+                    parsed = self._parse_json_from_text(content_text)
+                except Exception as exc:  # noqa: BLE001
+                    last_raw = content_text
+                    last_kind = "parse"
+                    raise ValueError("模型未按要求返回合法 JSON") from exc
+
+                try:
+                    normalized = self._normalize_response(parsed, expected, score_target_max)
+                except Exception as exc:  # noqa: BLE001
+                    last_raw = content_text
+                    last_kind = "parse"
+                    raise ValueError(f"模型返回内容不符合评分规则要求：{exc}") from exc
+
+                return content_text, parsed, normalized
             except Exception as exc:  # noqa: BLE001
                 last_exc = exc
-                logger.warning("调用大模型失败或超时，第 %d 次重试：%s", attempt + 1, exc)
+                if isinstance(exc, httpx.HTTPError):
+                    last_kind = "call"
+                logger.warning("模型调用或解析失败，第 %d 次尝试：%s", attempt + 1, exc)
                 if attempt == 2:
-                    logger.error("大模型连续多次调用失败，终止本次评分。")
-                    raise ModelError("模型调用失败或超时，请检查网络或稍后重试") from exc
-        try:
-            content_text = data["choices"][0]["message"]["content"]
-        except Exception as exc:  # noqa: BLE001
-            logger.error("模型返回结构异常：%s", exc)
-            raise ModelError("模型返回数据结构异常，缺少 choices.message.content 字段") from exc
-        try:
-            parsed = self._parse_json_from_text(content_text)
-        except Exception as exc:  # noqa: BLE001
-            logger.error("解析模型 JSON 失败：%s", exc)
-            raise ModelError("模型未按要求返回合法 JSON，请检查提示词设置", raw_response=content_text) from exc
-        normalized = self._normalize_response(parsed, expected, score_target_max)
-        return content_text, parsed, normalized
+                    if last_kind == "call":
+                        raise ModelError("模型调用失败或超时，已重试 3 次仍失败", raw_response=last_raw, kind=last_kind) from exc
+                    raise ModelError("模型返回内容不合格，已重试 3 次仍失败", raw_response=last_raw, kind=last_kind) from exc
+        raise ModelError("模型调用失败：未知错误", raw_response=last_raw, kind=last_kind) from last_exc
 
     def _mock_grade(
         self, template: str, expected: RubricExpected, score_target_max: float

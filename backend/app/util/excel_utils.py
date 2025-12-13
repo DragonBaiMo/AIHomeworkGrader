@@ -9,6 +9,7 @@ from typing import Any, Iterable, Optional
 
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.utils import get_column_letter
 
 from app.util.logger import logger
 
@@ -66,6 +67,25 @@ class ExcelExporter:
                 "状态",
                 "错误描述",
                 "总体评语",
+                "聚合算法",
+                "默认模型接口",
+                "默认模型名称",
+                "默认模型分数",
+                "默认模型评语",
+                "默认模型错误",
+                "默认模型耗时ms",
+                "追加模型1接口",
+                "追加模型1名称",
+                "追加模型1分数",
+                "追加模型1评语",
+                "追加模型1错误",
+                "追加模型1耗时ms",
+                "追加模型2接口",
+                "追加模型2名称",
+                "追加模型2分数",
+                "追加模型2评语",
+                "追加模型2错误",
+                "追加模型2耗时ms",
             ]
         )
 
@@ -136,12 +156,15 @@ class ExcelExporter:
         sheet_scores.column_dimensions["A"].width = 28
         sheet_scores.column_dimensions["B"].width = 12
         sheet_scores.column_dimensions["C"].width = 12
-        sheet_scores.column_dimensions["D"].width = 12
+        sheet_scores.column_dimensions["D"].width = 16
         sheet_scores.column_dimensions["E"].width = 12
         sheet_scores.column_dimensions["F"].width = 12
         sheet_scores.column_dimensions["G"].width = 10
-        sheet_scores.column_dimensions["H"].width = 24
+        sheet_scores.column_dimensions["H"].width = 28
         sheet_scores.column_dimensions["I"].width = 36
+        sheet_scores.column_dimensions["J"].width = 12
+        for col in range(11, sheet_scores.max_column + 1):
+            sheet_scores.column_dimensions[get_column_letter(col)].width = 18
         sheet_dimensions.column_dimensions["A"].width = 28
         sheet_dimensions.column_dimensions["B"].width = 12
         sheet_dimensions.column_dimensions["C"].width = 12
@@ -173,6 +196,17 @@ class ExcelExporter:
             score_rubric_max = row.get("score_rubric_max")
             error_message = row.get("error_message")
             comment = row.get("comment")
+            aggregate_strategy = row.get("aggregate_strategy") or ""
+            grader_results = row.get("grader_results") or []
+            by_index: dict[int, dict[str, Any]] = {}
+            if isinstance(grader_results, list):
+                for item in grader_results:
+                    if isinstance(item, dict):
+                        try:
+                            idx = int(item.get("model_index"))
+                        except Exception:  # noqa: BLE001
+                            continue
+                        by_index[idx] = item
 
             sheet_scores.append(
                 [
@@ -185,6 +219,25 @@ class ExcelExporter:
                     status,
                     error_message,
                     comment,
+                    aggregate_strategy,
+                    (by_index.get(1) or {}).get("api_url"),
+                    (by_index.get(1) or {}).get("model_name"),
+                    (by_index.get(1) or {}).get("score"),
+                    (by_index.get(1) or {}).get("comment"),
+                    (by_index.get(1) or {}).get("error_message"),
+                    (by_index.get(1) or {}).get("latency_ms"),
+                    (by_index.get(2) or {}).get("api_url"),
+                    (by_index.get(2) or {}).get("model_name"),
+                    (by_index.get(2) or {}).get("score"),
+                    (by_index.get(2) or {}).get("comment"),
+                    (by_index.get(2) or {}).get("error_message"),
+                    (by_index.get(2) or {}).get("latency_ms"),
+                    (by_index.get(3) or {}).get("api_url"),
+                    (by_index.get(3) or {}).get("model_name"),
+                    (by_index.get(3) or {}).get("score"),
+                    (by_index.get(3) or {}).get("comment"),
+                    (by_index.get(3) or {}).get("error_message"),
+                    (by_index.get(3) or {}).get("latency_ms"),
                 ]
             )
 

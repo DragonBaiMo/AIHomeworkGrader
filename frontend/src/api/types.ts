@@ -2,10 +2,18 @@ export interface GradeConfigPayload {
   apiUrl: string;
   apiKey: string;
   modelName: string;
+  multiEnabled: boolean;
+  models: ModelEndpointPayload[];
   template: string;
   mock: boolean;
   skipFormatCheck: boolean;
   scoreTargetMax: number;
+}
+
+export interface ModelEndpointPayload {
+  api_url: string;
+  api_key?: string;
+  model_name: string;
 }
 
 export interface GradeItem {
@@ -21,6 +29,8 @@ export interface GradeItem {
   error_message: string | null;
   raw_text_length: number;
   raw_response: string | null;
+  aggregate_strategy?: string | null;
+  grader_results?: any[] | null;
 }
 
 export interface GradeResponse {
