@@ -17,6 +17,10 @@ from app.util.logger import logger
 class ModelError(Exception):
     """大模型调用异常。"""
 
+    def __init__(self, message: str, *, raw_response: str | None = None) -> None:
+        super().__init__(message)
+        self.raw_response = raw_response
+
 
 class AIClient:
     """封装模型调用逻辑，兼顾真实接口与离线模拟。"""
@@ -27,8 +31,15 @@ class AIClient:
         self.model_name = model_name or "demo-model"
         self.mock = mock or not api_url
 
-    async def grade(self, content: str, system_prompt: str, template: str, expected: RubricExpected, score_target_max: float) -> Dict[str, Any]:
-        """对正文内容进行评分，返回标准化字典。"""
+    async def grade(
+        self,
+        content: str,
+        system_prompt: str,
+        template: str,
+        expected: RubricExpected,
+        score_target_max: float,
+    ) -> tuple[Dict[str, Any], Dict[str, Any]]:
+        """对正文内容进行评分，返回原始解析 + 标准化字典。"""
         if self.mock:
             logger.info("启用离线模拟评分，跳过真实调用。")
             return self._mock_grade(template, expected, score_target_max)
@@ -73,8 +84,9 @@ class AIClient:
             parsed = self._parse_json_from_text(content_text)
         except Exception as exc:  # noqa: BLE001
             logger.error("解析模型 JSON 失败：%s", exc)
-            raise ModelError("模型未按要求返回合法 JSON，请检查提示词设置") from exc
-        return self._normalize_response(parsed, expected, score_target_max)
+            raise ModelError("模型未按要求返回合法 JSON，请检查提示词设置", raw_response=content_text) from exc
+        normalized = self._normalize_response(parsed, expected, score_target_max)
+        return parsed, normalized
 
     def _mock_grade(self, template: str, expected: RubricExpected, score_target_max: float) -> Dict[str, Any]:
         """生成伪造评分结果（schema_version=2），便于离线演示。"""

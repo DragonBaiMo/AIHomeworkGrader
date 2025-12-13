@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, reactive, ref, toRaw, watch } from "vue";
 import type { DocxValidationConfig, PromptCategory, PromptConfig, PromptSection } from "@/api/types";
 import { useUI } from "@/composables/useUI";
 import { fetchPromptPreview } from "@/api/client";
@@ -9,6 +9,8 @@ const props = defineProps<{
   loading: boolean;
   saving: boolean;
   error: string;
+  autoSaveEnabled: boolean;
+  autoSaveIntervalMs: number;
 }>();
 
 const emit = defineEmits<{
@@ -20,7 +22,10 @@ const { showToast, confirm } = useUI();
 const editable = ref<PromptConfig | null>(null);
 const currentKey = ref<string>("");
 const collapsedModules = reactive(new Set<number>());
-const expandedItems = reactive(new Set<string>()); 
+const expandedItems = reactive(new Set<string>());
+const autoSaveTimer = ref<ReturnType<typeof setInterval> | null>(null);
+const lastSavedSnapshot = ref("");
+const isDirty = ref(false);
 const previewOpen = ref(false);
 const previewLoading = ref(false);
 const headerRefreshing = ref(false); // Local state for header refresh spin
@@ -47,20 +52,59 @@ watch(
     if (!val) {
       editable.value = null;
       currentKey.value = "";
+      lastSavedSnapshot.value = "";
+      isDirty.value = false;
       return;
     }
-    editable.value = JSON.parse(JSON.stringify(val)) as PromptConfig;
+    const raw = toRaw(val) as PromptConfig;
+    try {
+      editable.value = (typeof structuredClone === "function"
+        ? (structuredClone(raw) as PromptConfig)
+        : (JSON.parse(JSON.stringify(raw)) as PromptConfig));
+    } catch {
+      editable.value = JSON.parse(JSON.stringify(raw)) as PromptConfig;
+    }
     const keys = Object.keys(val.categories);
     if (!currentKey.value || !keys.includes(currentKey.value)) {
       currentKey.value = keys[0] ?? "";
     }
+    lastSavedSnapshot.value = JSON.stringify(val);
+    isDirty.value = false;
   },
-  { deep: true, immediate: true },
+  { immediate: true, deep: true },
 );
 
 const currentCategory = computed<PromptCategory | null>(() => {
   if (!editable.value || !currentKey.value) return null;
   return editable.value.categories[currentKey.value] ?? null;
+});
+
+watch(
+  editable,
+  () => {
+    if (!editable.value || !lastSavedSnapshot.value) return;
+    const current = JSON.stringify(editable.value);
+    isDirty.value = current !== lastSavedSnapshot.value;
+  },
+  { deep: true },
+);
+
+watch(
+  () => `${props.autoSaveEnabled}-${props.autoSaveIntervalMs}`,
+  () => {
+    startAutoSaveTimer();
+  },
+  { immediate: true },
+);
+
+onMounted(() => {
+  window.addEventListener("beforeunload", beforeUnloadHandler);
+});
+
+onBeforeUnmount(() => {
+  beforeUnloadHandler();
+  stopAutoSaveTimer();
+  window.removeEventListener("beforeunload", beforeUnloadHandler);
 });
 
 function ensureDocxValidation(category: PromptCategory): DocxValidationConfig {
@@ -214,7 +258,13 @@ function handleHeaderRefresh() {
 }
 
 function handleSave() {
+  doSave(true);
+}
+
+function doSave(force = false) {
   if (!editable.value) return;
+  if (props.saving) return;
+  if (!force && !isDirty.value) return;
   for (const cat of Object.values(editable.value.categories)) {
     const docxCfg = ensureDocxValidation(cat);
     if (docxCfg.enabled) {
@@ -230,6 +280,26 @@ function handleSave() {
     cat.sections.forEach((sec) => (sec.max_score = getSectionTotal(sec)));
   }
   emit("save", JSON.parse(JSON.stringify(editable.value)));
+}
+
+function startAutoSaveTimer() {
+  stopAutoSaveTimer();
+  if (!props.autoSaveEnabled || props.autoSaveIntervalMs <= 0) return;
+  autoSaveTimer.value = window.setInterval(() => {
+    if (props.saving) return;
+    doSave(false);
+  }, props.autoSaveIntervalMs);
+}
+
+function stopAutoSaveTimer() {
+  if (autoSaveTimer.value) {
+    window.clearInterval(autoSaveTimer.value);
+    autoSaveTimer.value = null;
+  }
+}
+
+function beforeUnloadHandler() {
+  doSave(true);
 }
 
 async function refreshPreview() {

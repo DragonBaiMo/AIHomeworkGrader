@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref, watch } from "vue";
+import { onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { fetchPromptConfig, gradeHomework, savePromptConfig } from "@/api/client";
-import type { GradeConfigPayload, GradeResponse, PromptConfig, TemplateOption } from "@/api/types";
+import type { GradeConfigPayload, GradeResponse, PromptConfig, PromptSettings, TemplateOption } from "@/api/types";
 import WorkspacePanel from "@/components/WorkspacePanel.vue";
 import SettingsPanel from "@/components/SettingsPanel.vue";
 import PromptEditor from "@/components/PromptEditor.vue";
@@ -41,6 +41,8 @@ const config = reactive<GradeConfigPayload>({
   scoreTargetMax: 60,
 });
 
+const configPersistTimer = ref<number | null>(null);
+
 const result = ref<GradeResponse | null>(null);
 const promptConfig = ref<PromptConfig | null>(null);
 const promptLoading = ref(false);
@@ -53,8 +55,37 @@ const defaultTemplate: TemplateOption = {
 };
 const templateOptions = ref<TemplateOption[]>([defaultTemplate]);
 
+const PROMPT_SETTINGS_KEY = "ai-grader-prompt-settings";
+const promptSettings = reactive<PromptSettings>({
+  autoSaveEnabled: true,
+  autoSaveIntervalSeconds: 60,
+});
+
 function updateConfig(payload: Partial<GradeConfigPayload>) {
   Object.assign(config, payload);
+}
+
+function updatePromptSettings(payload: Partial<PromptSettings>) {
+  if (typeof payload.autoSaveEnabled === "boolean") {
+    promptSettings.autoSaveEnabled = payload.autoSaveEnabled;
+  }
+  if (typeof payload.autoSaveIntervalSeconds === "number" && payload.autoSaveIntervalSeconds > 0) {
+    promptSettings.autoSaveIntervalSeconds = payload.autoSaveIntervalSeconds;
+  }
+}
+
+function loadPromptSettings() {
+  const cache = localStorage.getItem(PROMPT_SETTINGS_KEY);
+  if (!cache) return;
+  try {
+    const parsed = JSON.parse(cache) as PromptSettings;
+    promptSettings.autoSaveEnabled = parsed.autoSaveEnabled ?? promptSettings.autoSaveEnabled;
+    if (parsed.autoSaveIntervalSeconds && parsed.autoSaveIntervalSeconds > 0) {
+      promptSettings.autoSaveIntervalSeconds = parsed.autoSaveIntervalSeconds;
+    }
+  } catch {
+    /* ignore */
+  }
 }
 
 // --- Theme Logic ---
@@ -95,15 +126,61 @@ function loadFromStorage() {
 
 watch(
   () => ({ ...config }),
-  (val) => localStorage.setItem(STORAGE_KEY, JSON.stringify(val)),
+  (val) => {
+    if (configPersistTimer.value !== null) {
+      window.clearTimeout(configPersistTimer.value);
+    }
+    configPersistTimer.value = window.setTimeout(() => {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(val));
+      configPersistTimer.value = null;
+    }, 200);
+  },
   { deep: true },
 );
+
+watch(
+  () => ({ ...promptSettings }),
+  (val) => {
+    localStorage.setItem(PROMPT_SETTINGS_KEY, JSON.stringify(val));
+  },
+  { deep: true },
+);
+
+onBeforeUnmount(() => {
+  if (configPersistTimer.value !== null) {
+    window.clearTimeout(configPersistTimer.value);
+    configPersistTimer.value = null;
+  }
+});
 
 // --- Logic: Prompt Config ---
 async function loadPromptConfig() {
   promptLoading.value = true;
   try {
     const cfg = await fetchPromptConfig();
+    if (!cfg) {
+      promptConfig.value = {
+        system_prompt: "",
+        categories: {
+          default: {
+            display_name: "默认分类",
+            sections: [],
+            docx_validation: {
+              enabled: false,
+              allowed_font_keywords: [],
+              allowed_font_size_pts: [],
+              font_size_tolerance: 0.5,
+              target_line_spacing: null,
+              line_spacing_tolerance: null,
+            },
+          },
+        },
+      };
+      promptError.value = "提示词配置为空，已加载默认配置";
+      rebuildTemplateOptions(promptConfig.value);
+      showToast(promptError.value, "warning");
+      return;
+    }
     promptConfig.value = cfg;
     rebuildTemplateOptions(cfg);
   } catch (err) {
@@ -165,6 +242,7 @@ async function handleSavePrompt(payload: PromptConfig) {
 onMounted(() => {
   initTheme();
   loadFromStorage();
+  loadPromptSettings();
   loadPromptConfig();
 });
 </script>
@@ -227,7 +305,7 @@ onMounted(() => {
     <main class="main-viewport">
       <div class="viewport-content custom-scrollbar">
         <Transition name="page-transition" mode="out-in">
-          <KeepAlive include="WorkspacePanel">
+          <KeepAlive :include="['WorkspacePanel', 'PromptEditor', 'SettingsPanel']" :max="3">
             <WorkspacePanel 
               v-if="activeTab === 'workspace'"
               :config="config"
@@ -242,7 +320,9 @@ onMounted(() => {
             <SettingsPanel 
               v-else-if="activeTab === 'settings'"
               :config="config"
+              :prompt-settings="promptSettings"
               @update:config="updateConfig"
+              @update:promptSettings="updatePromptSettings"
               @submit="activeTab = 'workspace'"
             />
             <PromptEditor 
@@ -251,6 +331,8 @@ onMounted(() => {
               :loading="promptLoading"
               :saving="promptSaving"
               :error="promptError"
+              :auto-save-enabled="promptSettings.autoSaveEnabled"
+              :auto-save-interval-ms="promptSettings.autoSaveIntervalSeconds * 1000"
               @refresh="loadPromptConfig"
               @save="handleSavePrompt"
             />

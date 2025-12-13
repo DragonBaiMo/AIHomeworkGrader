@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import type { GradeConfigPayload, GradeResponse, TemplateOption } from "@/api/types";
 
 const props = defineProps<{
@@ -30,11 +30,10 @@ const currentTemplateLabel = computed(() =>
 );
 
 function selectTemplate(val: string) {
-  updateConfigField('template', val);
+  updateConfigField("template", val);
   isTemplateOpen.value = false;
 }
 
-// Close dropdown when clicking outside (Simple overlay approach)
 function closeDropdown() {
   isTemplateOpen.value = false;
 }
@@ -56,32 +55,48 @@ const fileSummary = computed(() => {
   return `${total} 个文件 (${sizeMB.toFixed(1)} MB)`;
 });
 
-const filteredItems = computed(() => {
+const detailCache = new Map<string, any>();
+
+watch(
+  () => props.result?.items,
+  () => {
+    detailCache.clear();
+  },
+);
+
+const parsedItems = computed(() => {
   const items = props.result?.items || [];
-  const query = (resultQuery.value || "").trim();
+  return items.map((item) => {
+    const cacheKey = `${item.file_name}@@${item.detail_json || ""}`;
+    let parsed = detailCache.get(cacheKey);
+    if (!parsed) {
+      let detail: any = {};
+      try {
+        detail = item.detail_json ? JSON.parse(item.detail_json) : {};
+      } catch {
+        detail = {};
+      }
+      parsed = {
+        rubric_items: detail.rubric_items || [],
+        feedback: detail.feedback || item.comment || "",
+        error_message: item.error_message || detail.error,
+        display_score: typeof detail.total_score === "number" ? detail.total_score : item.score,
+      };
+      detailCache.set(cacheKey, parsed);
+    }
+    return { ...item, ...parsed };
+  });
+});
+
+const parsedFilteredItems = computed(() => {
+  const items = parsedItems.value;
+  const query = (resultQuery.value || "").trim().toLowerCase();
   return items.filter((item) => {
     if (resultFilter.value === "success" && item.status !== "成功") return false;
     if (resultFilter.value === "fail" && item.status === "成功") return false;
     if (!query) return true;
     const hay = `${item.file_name} ${item.student_id || ""} ${item.student_name || ""}`.toLowerCase();
-    return hay.includes(query.toLowerCase());
-  });
-});
-
-const parsedFilteredItems = computed(() => {
-  return filteredItems.value.map((item) => {
-    let detail: any = {};
-    try {
-      detail = item.detail_json ? JSON.parse(item.detail_json) : {};
-    } catch (e) { /* ignore */ }
-    
-    return {
-      ...item,
-      rubric_items: detail.rubric_items || [],
-      feedback: detail.feedback || item.comment || "",
-      error_message: item.error_message || detail.error,
-      display_score: typeof detail.total_score === 'number' ? detail.total_score : item.score
-    };
+    return hay.includes(query);
   });
 });
 
@@ -126,6 +141,14 @@ function onDrop(event: DragEvent) {
   if (event.dataTransfer?.files) updateFiles(event.dataTransfer.files);
 }
 
+function onDragOver() {
+  if (!dragOver.value) dragOver.value = true;
+}
+
+function onDragLeave() {
+  if (dragOver.value) dragOver.value = false;
+}
+
 function handleSubmit() {
   if (!files.value.length) return;
   if (!props.config.mock && !props.config.apiUrl) {
@@ -161,8 +184,8 @@ function updateConfigField<T extends keyof GradeConfigPayload>(key: T, value: Gr
             'has-files': files.length > 0,
             'is-processing': loading 
           }"
-          @dragover.prevent="dragOver = true"
-          @dragleave="dragOver = false"
+          @dragover.prevent="onDragOver"
+          @dragleave="onDragLeave"
           @drop="onDrop"
         >
           <div class="zone-content">

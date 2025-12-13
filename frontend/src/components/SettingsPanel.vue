@@ -1,13 +1,15 @@
 <script setup lang="ts">
 import { ref } from "vue";
-import type { GradeConfigPayload } from "@/api/types";
+import type { GradeConfigPayload, PromptSettings } from "@/api/types";
 
 const props = defineProps<{
   config: GradeConfigPayload;
+  promptSettings: PromptSettings;
 }>();
 
 const emit = defineEmits<{
   (e: "update:config", payload: Partial<GradeConfigPayload>): void;
+  (e: "update:promptSettings", payload: Partial<PromptSettings>): void;
   (e: "submit"): void;
 }>();
 
@@ -23,6 +25,10 @@ const Icons = {
 function handleChange<T extends keyof GradeConfigPayload>(key: T, value: GradeConfigPayload[T]) {
   localConfig.value[key] = value;
   emit("update:config", { [key]: value });
+}
+
+function handlePromptSetting<T extends keyof PromptSettings>(key: T, value: PromptSettings[T]) {
+  emit("update:promptSettings", { [key]: value });
 }
 </script>
 
@@ -108,6 +114,40 @@ function handleChange<T extends keyof GradeConfigPayload>(key: T, value: GradeCo
               <div class="switch-knob"></div>
             </div>
           </label>
+        </div>
+
+        <div class="autosave-section">
+          <div class="toggle-section">
+            <div class="toggle-info">
+              <span class="toggle-title">自动保存评分规则</span>
+              <span class="toggle-desc">编辑规则后自动保存到后端并同步到 prompts.md</span>
+            </div>
+            <label class="ios-switch">
+              <input
+                type="checkbox"
+                :checked="promptSettings.autoSaveEnabled"
+                @change="handlePromptSetting('autoSaveEnabled', ($event.target as HTMLInputElement).checked)"
+              />
+              <div class="switch-body">
+                <div class="switch-knob"></div>
+              </div>
+            </label>
+          </div>
+          <div class="input-group autosave-input">
+            <label class="field-label">自动保存间隔（秒）</label>
+            <div class="input-wrapper">
+              <input
+                type="number"
+                class="modern-input font-mono"
+                min="15"
+                step="15"
+                :value="promptSettings.autoSaveIntervalSeconds"
+                :disabled="!promptSettings.autoSaveEnabled"
+                @input="handlePromptSetting('autoSaveIntervalSeconds', Number(($event.target as HTMLInputElement).value) || 60)"
+              />
+              <div class="focus-ring"></div>
+            </div>
+          </div>
         </div>
 
       </div>
@@ -274,6 +314,17 @@ function handleChange<T extends keyof GradeConfigPayload>(key: T, value: GradeCo
 }
 .ios-switch input:checked + .switch-body { background: var(--brand); border-color: var(--brand); }
 .ios-switch input:checked + .switch-body .switch-knob { transform: translateX(20px); }
+
+.autosave-section {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255,255,255,0.04);
+}
+.autosave-input .input-wrapper {
+  max-width: 220px;
+}
 
 @media (max-width: 600px) {
   .settings-layout { padding-top: 20px; padding-left: 16px; padding-right: 16px; }

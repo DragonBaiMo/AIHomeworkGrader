@@ -69,3 +69,8 @@ export interface TemplateOption {
   label: string;
   value: string;
 }
+
+export interface PromptSettings {
+  autoSaveEnabled: boolean;
+  autoSaveIntervalSeconds: number;
+}

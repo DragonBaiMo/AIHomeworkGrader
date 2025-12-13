@@ -6,11 +6,11 @@
       "sections": [
         {
           "key": "职业缘起与认知",
-          "max_score": 30.0,
+          "max_score": 34.0,
           "items": [
             {
               "key": "职业缘起",
-              "max_score": 8,
+              "max_score": 12,
               "description": "是否说明职业兴趣/目标的来源，如家庭环境、重大事件、过往经历、榜样力量等，叙述是否真实具体。"
             },
             {
@@ -77,7 +77,15 @@
             }
           ]
         }
-      ]
+      ],
+      "docx_validation": {
+        "enabled": false,
+        "allowed_font_keywords": [],
+        "allowed_font_size_pts": [],
+        "font_size_tolerance": 0.5,
+        "target_line_spacing": null,
+        "line_spacing_tolerance": null
+      }
     },
     "major_analysis": {
       "display_name": "专业分析报告",
@@ -146,7 +154,15 @@
             }
           ]
         }
-      ]
+      ],
+      "docx_validation": {
+        "enabled": false,
+        "allowed_font_keywords": [],
+        "allowed_font_size_pts": [],
+        "font_size_tolerance": 0.5,
+        "target_line_spacing": null,
+        "line_spacing_tolerance": null
+      }
     },
     "category_1765539950138": {
       "display_name": "新作业类型",
@@ -178,7 +194,15 @@
             }
           ]
         }
-      ]
+      ],
+      "docx_validation": {
+        "enabled": false,
+        "allowed_font_keywords": [],
+        "allowed_font_size_pts": [],
+        "font_size_tolerance": 0.5,
+        "target_line_spacing": null,
+        "line_spacing_tolerance": null
+      }
     }
   }
 }

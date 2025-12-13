@@ -140,6 +140,25 @@ body::before {
   opacity: var(--noise-opacity);
   mix-blend-mode: overlay;
   z-index: 9999;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  will-change: transform, opacity;
+}
+
+.v-tooltip-pop {
+  position: fixed;
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: var(--bg-popover);
+  color: var(--txt-primary);
+  border: 1px solid var(--border-dim);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  z-index: 10000;
+  white-space: nowrap;
+  box-shadow: var(--shadow-dream);
+  user-select: none;
 }
 
 /* Custom Scrollbar */
