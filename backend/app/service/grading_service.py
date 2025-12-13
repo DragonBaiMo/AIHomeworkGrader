@@ -16,7 +16,14 @@ from fastapi import UploadFile
 from app.model.schemas import GradeConfig, GradeItem, GradeResponse, ModelEndpoint
 from app.service.ai_client import AIClient, ModelError
 from app.service.prompt_builder import build_system_prompt, build_user_prompt
-from app.service.prompt_config import load_prompt_config
+from app.service.prompt_config import (
+    OVERALL_COMMENT_SYSTEM_KEY,
+    OVERALL_COMMENT_USER_KEY,
+    default_overall_comment_system_prompt,
+    default_overall_comment_user_template,
+    load_prompt_config,
+    load_prompts_md_sections,
+)
 from app.service.rules import AssignmentCategory, detect_assignment_category, get_rule
 from app.util.audit_logger import AuditLogger
 from app.util.excel_utils import ExcelExporter
@@ -151,17 +158,8 @@ class GradingService:
         aggregate_score: float,
         model_results: list[dict],
     ) -> tuple[str, str]:
-        system_prompt = (
-            "你是一名严格的高校教师，负责给学生作业写“总体评语”。\n"
-            "你必须只输出一个 JSON 对象，不要输出任何解释文字，不要使用 Markdown 代码块。\n"
-            "JSON 结构如下：\n"
-            '{\n'
-            '  "comment": "中文总体评语，建议 120-220 字，包含优点+不足+改进建议，避免空泛",\n'
-            '  "strengths": ["优点1", "优点2"],\n'
-            '  "suggestions": ["建议1", "建议2"]\n'
-            '}\n'
-            "约束：comment 必须为非空中文字符串；strengths/suggestions 允许为空数组；不要包含分数字段。"
-        )
+        md_sections = load_prompts_md_sections()
+        system_prompt = (md_sections.get(OVERALL_COMMENT_SYSTEM_KEY) or "").strip() or default_overall_comment_system_prompt()
 
         compact_models: list[dict] = []
         for r in model_results:
@@ -178,13 +176,12 @@ class GradingService:
                 }
             )
 
+        template = (md_sections.get(OVERALL_COMMENT_USER_KEY) or "").strip() or default_overall_comment_user_template()
         user_prompt = (
-            "请基于下列“多模型批改结果”给出总体评语（不要提及具体分数）。\n"
-            f"作业分类：{category}\n"
-            f"目标满分：{score_target_max}\n"
-            f"聚合分（仅供参考）：{aggregate_score}\n"
-            f"多模型结果（可能含失败）：{json.dumps(compact_models, ensure_ascii=False)}\n"
-            "输出要求：严格按 system 指定 JSON 输出。"
+            template.replace("{{CATEGORY}}", str(category))
+            .replace("{{SCORE_TARGET_MAX}}", str(score_target_max))
+            .replace("{{AGG_SCORE}}", str(aggregate_score))
+            .replace("{{MODEL_RESULTS_JSON}}", json.dumps(compact_models, ensure_ascii=False))
         )
         return system_prompt, user_prompt
 
@@ -239,6 +236,7 @@ class GradingService:
                             target_line_spacing=category_cfg.docx_validation.target_line_spacing,
                             line_spacing_tolerance=category_cfg.docx_validation.line_spacing_tolerance,
                         )
+
                     user_prompt, expected = build_user_prompt(category_cfg, score_target_max=float(config.score_target_max))
                     system_prompt = build_system_prompt(prompt_config.system_prompt)
                     auditor.save_prompts(system_prompt, user_prompt)
@@ -308,8 +306,6 @@ class GradingService:
                             ],
                         )
                         return item, {"file_name": file_path.name, "error_type": "模型调用错误", "error_message": item.error_message}
-
-                    default_result = next((r for r in model_results if int(r.get("model_index") or 0) == 1), None)
 
                     scores_success = [float(r.get("score")) for r in success]
                     mean_score = float(statistics.mean(scores_success))

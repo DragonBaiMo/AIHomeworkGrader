@@ -103,10 +103,12 @@ def test_export_results_layout_option_b_sheets_and_headers(tmp_path: Path) -> No
     assert "主模型得分" in dim_headers
     assert "副模型1得分" in dim_headers
     assert "副模型2得分" not in dim_headers
+    assert "参与模型数" not in dim_headers
 
     criteria_headers = [cell.value for cell in workbook["细则明细"][1]]
     assert "细则名称" in criteria_headers
     assert "扣分原因/得分依据（取主模型）" in criteria_headers
+    assert "参与模型数" not in criteria_headers
 
     error_headers = [cell.value for cell in workbook["错误"][1]]
     assert error_headers == ["文件名", "错误类型", "错误描述"]

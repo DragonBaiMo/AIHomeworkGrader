@@ -93,3 +93,28 @@ export async function fetchPromptPreview(promptConfig: PromptConfig, categoryKey
   }
   return resp.json();
 }
+
+export async function fetchPromptTemplates(): Promise<Record<string, string>> {
+  const resp = await fetch(`${API_PREFIX}/prompt-templates`);
+  if (!resp.ok) {
+    throw new Error("获取提示词模板失败");
+  }
+  const data = await resp.json();
+  return data?.sections ?? {};
+}
+
+export async function savePromptTemplates(sections: Record<string, string>): Promise<void> {
+  const resp = await fetch(`${API_PREFIX}/prompt-templates`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ sections }),
+  });
+
+  if (!resp.ok) {
+    const data = await parseJsonSafe(resp);
+    const message = data?.detail || "保存提示词模板失败";
+    throw new Error(message);
+  }
+}

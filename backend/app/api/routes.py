@@ -12,7 +12,13 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
 from app.model.schemas import GradeConfig, GradeResponse, ModelEndpoint
 from app.service.grading_service import GradingService
-from app.service.prompt_config import PROMPT_CONFIG_PATH, load_prompt_config, save_prompt_config
+from app.service.prompt_config import (
+    PROMPT_CONFIG_PATH,
+    load_prompt_config,
+    load_prompts_md_sections,
+    save_prompt_config,
+    save_prompts_md_sections,
+)
 from app.util.logger import logger
 from config.settings import STATIC_DIR
 
@@ -137,8 +143,28 @@ async def update_prompt_config(payload: dict = Body(...)) -> JSONResponse:
     try:
         save_prompt_config(payload)
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise HTTPException(status_code=400, detail=f"提示词配置校验失败：{exc}")
     return JSONResponse({"message": "提示词配置已更新"})
+
+
+@router.get("/prompt-templates")
+async def get_prompt_templates() -> JSONResponse:
+    """获取 prompts.md 中的所有分段内容。"""
+    sections = load_prompts_md_sections()
+    return JSONResponse({"sections": sections})
+
+
+@router.post("/prompt-templates")
+async def update_prompt_templates(payload: dict = Body(...)) -> JSONResponse:
+    """更新 prompts.md 中的分段内容。"""
+    sections = payload.get("sections")
+    if not isinstance(sections, dict):
+        raise HTTPException(status_code=400, detail="sections 必须为对象")
+    try:
+        save_prompts_md_sections(sections)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return JSONResponse({"message": "提示词模板已更新"})
 
 
 @router.post("/prompt-preview")
@@ -156,7 +182,7 @@ async def prompt_preview(payload: dict = Body(...)) -> JSONResponse:
         cat_cfg = cfg.categories.get(category_key)
         if cat_cfg is None:
             raise ValueError("未找到对应分类配置")
-        user_prompt, expected = build_user_prompt(cat_cfg, score_target_max=score_target_max)
+        user_prompt, expected = build_user_prompt(cat_cfg, score_target_max=score_target_max, category_key=category_key)
         system_prompt = build_system_prompt(cfg.system_prompt)
         return JSONResponse(
             {

@@ -6,11 +6,11 @@
       "sections": [
         {
           "key": "职业缘起与认知",
-          "max_score": 34.0,
+          "max_score": 42.0,
           "items": [
             {
               "key": "职业缘起",
-              "max_score": 12,
+              "max_score": 20,
               "description": "是否说明职业兴趣/目标的来源，如家庭环境、重大事件、过往经历、榜样力量等，叙述是否真实具体。"
             },
             {

@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import WorkspacePanel from "@/components/WorkspacePanel.vue";
-import SettingsPanel from "@/components/SettingsPanel.vue";
-import PromptEditor from "@/components/PromptEditor.vue";
-import GlobalToast from "@/components/ui/GlobalToast.vue";
-import GlobalModal from "@/components/ui/GlobalModal.vue";
+import WorkspacePanel from "@/modules/workspace/ui/WorkspacePanel.vue";
+import SettingsPanel from "@/modules/settings/ui/SettingsPanel.vue";
+import PromptEditor from "@/modules/prompt-editor/ui/PromptEditor.vue";
+import PromptTemplates from "@/modules/prompt-editor/ui/PromptTemplates.vue";
+import GlobalToast from "@/shared/ui/toast/GlobalToast.vue";
+import GlobalModal from "@/shared/ui/modal/GlobalModal.vue";
 import { Icons } from "@/app/icons";
-import { useAppController } from "@/app/useAppController";
+import { useAppController } from "@/app/controller";
 const {
   activeTab,
   theme,
@@ -62,6 +63,15 @@ const {
 
         <button
           class="nav-item"
+          :class="{ active: activeTab === 'templates' }"
+          @click="activeTab = 'templates'"
+          v-tooltip="'提示词规范'"
+        >
+          <span class="icon" v-html="Icons.Templates"></span>
+        </button>
+
+        <button
+          class="nav-item"
           :class="{ active: activeTab === 'settings' }"
           @click="activeTab = 'settings'"
           v-tooltip="'系统设置'"
@@ -88,7 +98,7 @@ const {
     <main class="main-viewport">
       <div class="viewport-content custom-scrollbar">
         <Transition name="page-transition" mode="out-in">
-          <KeepAlive :include="['WorkspacePanel', 'PromptEditor', 'SettingsPanel']" :max="3">
+          <KeepAlive :include="['WorkspacePanel', 'PromptEditor', 'PromptTemplates', 'SettingsPanel']" :max="4">
             <WorkspacePanel 
               v-if="activeTab === 'workspace'"
               :config="config"
@@ -109,6 +119,9 @@ const {
               @update:config="updateConfig"
               @update:promptSettings="updatePromptSettings"
               @submit="activeTab = 'workspace'"
+            />
+            <PromptTemplates
+              v-else-if="activeTab === 'templates'"
             />
             <PromptEditor 
               v-else

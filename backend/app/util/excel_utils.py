@@ -91,7 +91,6 @@ class ExcelExporter:
                 "汇总得分（成功模型均值）",
                 "维度满分",
                 *dim_headers,
-                "参与模型数",
                 "分歧度（极差）",
                 "维度评语（取主模型）",
             ]
@@ -111,7 +110,6 @@ class ExcelExporter:
                 "汇总得分（成功模型均值）",
                 "细则满分",
                 *criteria_headers,
-                "参与模型数",
                 "分歧度（极差）",
                 "扣分原因/得分依据（取主模型）",
             ]
@@ -144,6 +142,15 @@ class ExcelExporter:
 
         for sheet in (sheet_overview, sheet_models, sheet_dimensions, sheet_criteria, sheet_summary, sheet_errors):
             style_sheet(sheet)
+
+        def highlight_column(sheet, col_index: int, fill: PatternFill) -> None:
+            for row_idx in range(1, sheet.max_row + 1):
+                cell = sheet.cell(row=row_idx, column=col_index)
+                cell.fill = fill
+
+        fill_score = PatternFill("solid", fgColor="FFF2CC")  # 浅黄：分数类
+        fill_comment = PatternFill("solid", fgColor="E2F0D9")  # 浅绿：评语类
+        fill_meta = PatternFill("solid", fgColor="D9E1F2")  # 浅蓝：关键信息类
 
         summary_font = Font(bold=True)
         summary_fill = PatternFill("solid", fgColor="F2F2F2")
@@ -199,6 +206,33 @@ class ExcelExporter:
         for col in range(8, sheet_criteria.max_column + 1):
             sheet_criteria.column_dimensions[get_column_letter(col)].width = 14
         sheet_criteria.column_dimensions[get_column_letter(sheet_criteria.max_column)].width = 46
+
+        # 关键列高亮（提升可读性）
+        # 成绩总览：最终分、总体评语
+        highlight_column(sheet_overview, 4, fill_score)
+        highlight_column(sheet_overview, 8, fill_comment)
+        highlight_column(sheet_overview, 1, fill_meta)
+
+        # 批改模型结果：各模型分数列、各模型评语列、LLM 总评语列
+        # 列布局：A文件名 B学号 C姓名，之后每模型 3 列：名称/分数/评语，最后是总评语
+        base = 4
+        for _idx in range(1, model_count + 1):
+            highlight_column(sheet_models, base + 1, fill_score)   # 分数
+            highlight_column(sheet_models, base + 2, fill_comment) # 评语
+            base += 3
+        highlight_column(sheet_models, sheet_models.max_column, fill_comment)
+
+        # 维度汇总：汇总得分、各模型得分、维度评语
+        highlight_column(sheet_dimensions, 5, fill_score)
+        for col in range(7, 7 + model_count):
+            highlight_column(sheet_dimensions, col, PatternFill("solid", fgColor="F8F8F8"))
+        highlight_column(sheet_dimensions, sheet_dimensions.max_column, fill_comment)
+
+        # 细则明细：汇总得分、各模型得分、依据说明
+        highlight_column(sheet_criteria, 6, fill_score)
+        for col in range(8, 8 + model_count):
+            highlight_column(sheet_criteria, col, PatternFill("solid", fgColor="F8F8F8"))
+        highlight_column(sheet_criteria, sheet_criteria.max_column, fill_comment)
 
         def normalize_model_comment(info: dict[str, Any]) -> str:
             if info.get("status") != "成功":
@@ -311,11 +345,9 @@ class ExcelExporter:
                 if valid_scores:
                     mean_dim = round(float(statistics.mean(valid_scores)), 2)
                     span = round(float(max(valid_scores) - min(valid_scores)), 2) if len(valid_scores) >= 2 else 0.0
-                    participants = len(valid_scores)
                 else:
                     mean_dim = None
                     span = None
-                    participants = 0
 
                 sheet_dimensions.append(
                     [
@@ -326,7 +358,6 @@ class ExcelExporter:
                         mean_dim,
                         max_score,
                         *[scores_by_model.get(idx) for idx in range(1, model_count + 1)],
-                        participants,
                         span,
                         main_comment,
                     ]
@@ -375,11 +406,9 @@ class ExcelExporter:
                     if valid_item_scores:
                         mean_item = round(float(statistics.mean(valid_item_scores)), 2)
                         span_item = round(float(max(valid_item_scores) - min(valid_item_scores)), 2) if len(valid_item_scores) >= 2 else 0.0
-                        participants_item = len(valid_item_scores)
                     else:
                         mean_item = None
                         span_item = None
-                        participants_item = 0
 
                     sheet_criteria.append(
                         [
@@ -391,7 +420,6 @@ class ExcelExporter:
                             mean_item,
                             item_max,
                             *[item_scores_by_model.get(idx) for idx in range(1, model_count + 1)],
-                            participants_item,
                             span_item,
                             item_comment_main,
                         ]

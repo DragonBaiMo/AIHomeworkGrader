@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { GradeConfigPayload, PromptSettings } from "@/api/types";
-import { useSettingsPanel } from "./settings-panel/useSettingsPanel";
+import { useSettingsPanel } from "../logic/useSettingsPanel";
 
 const props = defineProps<{
   config: GradeConfigPayload;
@@ -222,6 +222,6 @@ const {
 
     </div>
   </div>
-</template>
-
-<style scoped src="./settings-panel/settings-panel.css"></style>
+ </template>
+ 
+ <style scoped src="../styles/settings-panel.css"></style>

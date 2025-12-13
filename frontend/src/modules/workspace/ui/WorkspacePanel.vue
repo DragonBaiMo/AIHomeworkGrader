@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import type { GradeConfigPayload, GradeResponse, TemplateOption } from "@/api/types";
-import { useUI } from "@/composables/useUI";
+import { useUI } from "@/shared/composables/useUI";
 
 const props = defineProps<{
   config: GradeConfigPayload;
@@ -51,7 +51,8 @@ const Icons = {
   Trash: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>`,
   Alert: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`,
   ChevronDown: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>`,
-  Search: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>`
+  Search: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>`,
+  Plus: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`
 };
 
 const fileSummary = computed(() => {
@@ -138,15 +139,39 @@ function updateFiles(list: FileList | File[]) {
   hint.value = "";
 }
 
+function appendFiles(list: FileList | File[]) {
+  const incoming = Array.from(list).filter((file) => isSupportedFileName(file.name));
+  if (!incoming.length) {
+    if (list.length > 0) hint.value = "仅支持 .docx / .md / .markdown / .txt";
+    return;
+  }
+  
+  const existingNames = new Set(files.value.map(f => f.name));
+  const unique = incoming.filter(f => !existingNames.has(f.name));
+  
+  if (unique.length) {
+    files.value = [...files.value, ...unique];
+    hint.value = "";
+  }
+}
+
 function onFileChange(event: Event) {
   const target = event.target as HTMLInputElement;
   if (target.files) updateFiles(target.files);
 }
 
+function onFileAppend(event: Event) {
+  const target = event.target as HTMLInputElement;
+  if (target.files) {
+    appendFiles(target.files);
+    target.value = ""; // Reset input
+  }
+}
+
 function onDrop(event: DragEvent) {
   event.preventDefault();
   dragOver.value = false;
-  if (event.dataTransfer?.files) updateFiles(event.dataTransfer.files);
+  if (event.dataTransfer?.files) appendFiles(event.dataTransfer.files);
 }
 
 function onDragOver() {
@@ -245,6 +270,11 @@ function updateConfigField<T extends keyof GradeConfigPayload>(key: T, value: Gr
               
               <div v-else class="btn-group">
                 <button class="bento-btn ghost" @click="files = []">清空</button>
+                <label class="bento-btn ghost">
+                  <span class="btn-icon" v-html="Icons.Plus"></span>
+                  <span>添加</span>
+                  <input type="file" accept=".docx,.md,.markdown,.txt" multiple hidden @change="onFileAppend" />
+                </label>
                 <button class="bento-btn primary" @click="handleSubmit">开始批改</button>
               </div>
             </div>
@@ -488,4 +518,4 @@ function updateConfigField<T extends keyof GradeConfigPayload>(key: T, value: Gr
   </div>
 </template>
 
-<style scoped src="./workspace-panel.css"></style>
+<style scoped src="../styles/workspace-panel.css"></style>

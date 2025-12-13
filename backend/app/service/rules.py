@@ -157,7 +157,7 @@ def get_system_prompt() -> str:
         return config.system_prompt
     prompts = _load_prompts()
     custom = prompts.get("system")
-    if custom:
+    if custom and not _is_placeholder(custom):
         return custom
     return "你是一名严格的高校教师，负责批改学生作业。请严格按照要求只输出一个 JSON 对象，不要输出任何解释文字、不要使用 Markdown 代码块。"
 
@@ -183,13 +183,13 @@ def build_template_prompt(category: AssignmentCategory) -> str:
         cat_cfg = config.categories.get(category)
         if cat_cfg is not None:
             # 注意：这里仅作为兜底旧逻辑使用；新逻辑在 grading_service 中会带入 score_target_max 编译。
-            prompt, _expected = build_user_prompt(cat_cfg, score_target_max=60.0)
+            prompt, _expected = build_user_prompt(cat_cfg, score_target_max=60.0, category_key=category)
             return prompt
 
     prompts = _load_prompts()
     key = category
     custom = prompts.get(key)
-    if custom:
+    if custom and not _is_placeholder(custom):
         return custom
 
     rule = get_rule(category)
@@ -235,3 +235,7 @@ def build_template_prompt(category: AssignmentCategory) -> str:
         "不要添加任何额外字段，不要输出说明文字，不要使用 Markdown 代码块，只输出一个 JSON 对象。"
     )
     return prompt
+
+
+def _is_placeholder(text: str) -> bool:
+    return bool((text or "").strip().startswith("（占位符："))

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, toRaw, watch } from "vue";
 import type { DocxValidationConfig, PromptCategory, PromptConfig, PromptSection } from "@/api/types";
-import { useUI } from "@/composables/useUI";
+import { useUI } from "@/shared/composables/useUI";
 import { fetchPromptPreview } from "@/api/client";
 
 const props = defineProps<{
@@ -202,9 +202,11 @@ function isItemExpanded(mIdx: number, iIdx: number) {
 function addCategory() {
   if (!editable.value) return;
   const key = `cat_${Date.now()}`;
+  const defaultItem = { key: "评分点1", max_score: 5, description: "（占位符：请填写评分说明）" };
+  const defaultSection = { key: "新维度", max_score: 5, items: [defaultItem] };
   editable.value.categories[key] = {
     display_name: "新分类",
-    sections: [],
+    sections: [defaultSection],
     docx_validation: {
       enabled: false,
       allowed_font_keywords: [],
@@ -237,15 +239,35 @@ function removeCategory(key: string) {
 }
 
 function addSection() {
-  currentCategory.value?.sections.unshift({ key: "新维度", max_score: 10, items: [] });
+  const cat = currentCategory.value;
+  if (!cat) return;
+  cat.sections.unshift({
+    key: "新维度",
+    max_score: 5,
+    items: [{ key: "评分点1", max_score: 5, description: "（占位符：请填写评分说明）" }],
+  });
 }
-function removeSection(idx: number) { currentCategory.value?.sections.splice(idx, 1); }
+function removeSection(idx: number) {
+  const cat = currentCategory.value;
+  if (!cat) return;
+  if (cat.sections.length <= 1) {
+    showToast("每个分类至少保留一个评分维度", "warning");
+    return;
+  }
+  cat.sections.splice(idx, 1);
+}
 
 function addItem(section: PromptSection, mIdx: number) {
-  section.items.push({ key: "评分点", max_score: 5, description: "" });
+  section.items.push({ key: `评分点${section.items.length + 1}`, max_score: 5, description: "（占位符：请填写评分说明）" });
   expandedItems.add(`${mIdx}-${section.items.length - 1}`);
 }
-function removeItem(section: PromptSection, idx: number) { section.items.splice(idx, 1); }
+function removeItem(section: PromptSection, idx: number) {
+  if (section.items.length <= 1) {
+    showToast("每个维度至少保留一个评分点", "warning");
+    return;
+  }
+  section.items.splice(idx, 1);
+}
 
 function getSectionTotal(section: PromptSection) {
   return section.items.reduce((sum, item) => sum + (Number(item.max_score) || 0), 0);
@@ -266,6 +288,38 @@ function doSave(force = false) {
   if (props.saving) return;
   if (!force && !isDirty.value) return;
   for (const cat of Object.values(editable.value.categories)) {
+    if (!cat.display_name || !String(cat.display_name).trim()) {
+      showToast("分类名称不能为空", "error");
+      return;
+    }
+    if (!Array.isArray(cat.sections) || cat.sections.length === 0) {
+      showToast(`分类“${cat.display_name}”至少需要一个评分维度`, "error");
+      return;
+    }
+    for (const sec of cat.sections) {
+      if (!sec.key || !String(sec.key).trim()) {
+        showToast(`分类“${cat.display_name}”存在空的维度名称`, "error");
+        return;
+      }
+      if (!Array.isArray(sec.items) || sec.items.length === 0) {
+        showToast(`分类“${cat.display_name}”维度“${sec.key}”的评分点列表不能为空（请至少添加一个评分点）`, "error");
+        return;
+      }
+      for (const item of sec.items) {
+        if (!item.key || !String(item.key).trim()) {
+          showToast(`分类“${cat.display_name}”维度“${sec.key}”存在空的评分点名称`, "error");
+          return;
+        }
+        if (!(Number(item.max_score) > 0)) {
+          showToast(`分类“${cat.display_name}”维度“${sec.key}”评分点“${item.key}”满分必须大于 0`, "error");
+          return;
+        }
+        if (!item.description || !String(item.description).trim()) {
+          showToast(`分类“${cat.display_name}”维度“${sec.key}”评分点“${item.key}”说明不能为空`, "error");
+          return;
+        }
+      }
+    }
     const docxCfg = ensureDocxValidation(cat);
     if (docxCfg.enabled) {
       if (!docxCfg.allowed_font_keywords?.length) {
@@ -394,15 +448,6 @@ async function refreshPreview() {
                  <div class="field-group">
                    <label>分类名称</label>
                    <input type="text" v-model="currentCategory.display_name" class="clean-input-lg" placeholder="e.g. 职业规划书" />
-                 </div>
-                 <div class="field-group">
-                   <label>AI 角色 (System Prompt)</label>
-                   <textarea
-                     v-model="editable.system_prompt"
-                     rows="3"
-                     class="clean-textarea"
-                     placeholder="定义 AI 在评估时的角色与视角..."
-                   ></textarea>
                  </div>
               </div>
             </section>
@@ -561,4 +606,4 @@ async function refreshPreview() {
   </div>
 </template>
 
-<style scoped src="./prompt-editor.css"></style>
+<style scoped src="../styles/prompt-editor.css"></style>
