@@ -15,6 +15,7 @@ from app.service.ai_client import AIClient, ModelError
 from app.service.prompt_builder import build_system_prompt, build_user_prompt
 from app.service.prompt_config import load_prompt_config
 from app.service.rules import AssignmentCategory, detect_assignment_category, get_rule
+from app.util.audit_logger import AuditLogger
 from app.util.excel_utils import ExcelExporter
 from app.util.file_utils import (
     FileMeta,
@@ -42,6 +43,17 @@ class GradingService:
         exporter = ExcelExporter(batch_dir)
         ai_client = AIClient(config.api_url, config.api_key, config.model_name, mock=config.mock)
         prompt_config = load_prompt_config()
+        auditor = AuditLogger(batch_id)
+        auditor.save_meta(
+            {
+                "template": config.template,
+                "score_target_max": float(config.score_target_max),
+                "model_name": config.model_name,
+                "mock_mode": config.mock,
+                "files": [path.name for path in stored_paths],
+            }
+        )
+        auditor.log_operation("批次初始化完成，准备开始处理文件")
 
         grade_items: List[GradeItem] = []
         error_rows: List[dict] = []
@@ -55,6 +67,7 @@ class GradingService:
                 student_id = meta.student_id
                 student_name = meta.student_name
                 raw_length = len(content)
+                auditor.log_operation(f"开始处理文件 {file_path.name}，识别为 {category}")
 
                 # 提示词编译（低代码：由 UI 配置驱动）
                 if prompt_config is None or category not in prompt_config.categories:
@@ -71,6 +84,7 @@ class GradingService:
                     )
                 user_prompt, expected = build_user_prompt(category_cfg, score_target_max=float(config.score_target_max))
                 system_prompt = build_system_prompt(prompt_config.system_prompt)
+                auditor.save_prompts(system_prompt, user_prompt)
 
                 model_result = await ai_client.grade(
                     content=content,
@@ -79,6 +93,7 @@ class GradingService:
                     expected=expected,
                     score_target_max=float(config.score_target_max),
                 )
+                auditor.save_model_interaction(file_path.name, system_prompt, user_prompt, model_result)
 
                 detail_json = json.dumps(model_result, ensure_ascii=False)
                 grade_items.append(
@@ -98,6 +113,8 @@ class GradingService:
                 )
             except ValueError as exc:
                 logger.warning("文件处理异常：%s -> %s", file_path.name, exc)
+                auditor.append_error(file_path.name, str(exc))
+                auditor.log_operation(f"文件 {file_path.name} 处理失败：{exc}")
                 grade_items.append(
                     GradeItem(
                         file_name=file_path.name,
@@ -122,6 +139,8 @@ class GradingService:
                 )
             except ModelError as exc:
                 logger.warning("模型评分失败：%s -> %s", file_path.name, exc)
+                auditor.append_error(file_path.name, str(exc))
+                auditor.log_operation(f"文件 {file_path.name} 模型调用失败：{exc}")
                 grade_items.append(
                     GradeItem(
                         file_name=file_path.name,
@@ -145,11 +164,29 @@ class GradingService:
                     }
                 )
 
-        exporter.export_results([item.model_dump() for item in grade_items])
-        exporter.export_errors(error_rows)
-
         scores = [item.score for item in grade_items if item.score is not None]
         average_score = round(statistics.mean(scores), 2) if scores else None
+        score_rubric_values = [item.score_rubric for item in grade_items if item.score_rubric is not None]
+        average_score_rubric = round(statistics.mean(score_rubric_values), 2) if score_rubric_values else None
+        rubric_max_values = sorted({float(item.score_rubric_max) for item in grade_items if item.score_rubric_max is not None})
+
+        auditor.log_operation("批次处理完毕，准备导出 Excel 与 响应")
+
+        exporter.export_results(
+            [item.model_dump() for item in grade_items],
+            summary={
+                "批次ID": batch_id,
+                "目标满分": float(config.score_target_max),
+                "规则满分（可能多值）": " / ".join(str(v) for v in rubric_max_values) if rubric_max_values else "",
+                "文件总数": len(grade_items),
+                "成功数": len(scores),
+                "失败数": len(grade_items) - len(scores),
+                "平均分（目标满分制）": average_score if average_score is not None else "",
+                "平均规则分": average_score_rubric if average_score_rubric is not None else "",
+            },
+            error_rows=error_rows,
+        )
+        exporter.export_errors(error_rows)
 
         response = GradeResponse(
             batch_id=batch_id,
