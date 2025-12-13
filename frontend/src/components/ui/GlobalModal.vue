@@ -44,6 +44,7 @@ function handleConfirm() {
   backdrop-filter: blur(12px);
   z-index: 9000;
   display: flex; align-items: center; justify-content: center;
+  will-change: opacity;
 }
 
 .modal-card {
@@ -55,6 +56,7 @@ function handleConfirm() {
   display: flex; flex-direction: column;
   overflow: hidden;
   position: relative;
+  will-change: transform, opacity;
 }
 /* Highlight */
 .modal-card::before {
@@ -92,7 +94,7 @@ function handleConfirm() {
   font-size: 13px; font-weight: 600;
   cursor: pointer;
   border: 1px solid transparent;
-  transition: all 0.2s cubic-bezier(0.2, 0, 0, 1);
+  transition: transform 0.2s cubic-bezier(0.2, 0, 0, 1), box-shadow 0.2s, background-color 0.2s;
   display: flex; align-items: center; justify-content: center;
 }
 .action-btn:active { transform: scale(0.98); }
@@ -121,16 +123,16 @@ function handleConfirm() {
 
 /* Animation */
 .modal-pop-enter-active, .modal-pop-leave-active {
-  transition: all 0.3s cubic-bezier(0.19, 1, 0.22, 1);
+  transition: opacity 0.3s cubic-bezier(0.19, 1, 0.22, 1);
 }
 .modal-pop-enter-from, .modal-pop-leave-to {
   opacity: 0;
 }
 .modal-pop-enter-active .modal-card {
-  transition: all 0.3s cubic-bezier(0.19, 1, 0.22, 1);
+  transition: transform 0.3s cubic-bezier(0.19, 1, 0.22, 1), opacity 0.3s;
 }
 .modal-pop-leave-active .modal-card {
-  transition: all 0.2s ease-in;
+  transition: transform 0.2s ease-in, opacity 0.2s ease-in;
 }
 .modal-pop-enter-from .modal-card,
 .modal-pop-leave-to .modal-card {

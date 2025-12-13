@@ -1,25 +1,25 @@
 <script setup lang="ts">
 import { useUI } from "@/composables/useUI";
 
-const { toastState } = useUI();
+const { toasts } = useUI();
 </script>
 
 <template>
-  <Transition name="toast-spring">
-    <div v-if="toastState.show" class="toast-wrapper">
-      <div 
-        class="toast-capsule glass-morphism" 
-        :class="toastState.type"
-      >
-        <div class="toast-icon-box">
-          <svg v-if="toastState.type === 'success'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-          <svg v-else-if="toastState.type === 'error'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-          <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
-        </div>
-        <span class="toast-message">{{ toastState.message }}</span>
+  <TransitionGroup name="toast-spring" tag="div" class="toast-wrapper">
+    <div 
+      v-for="toast in toasts" 
+      :key="toast.id" 
+      class="toast-capsule glass-morphism" 
+      :class="toast.type"
+    >
+      <div class="toast-icon-box">
+        <svg v-if="toast.type === 'success'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+        <svg v-else-if="toast.type === 'error'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
       </div>
+      <span class="toast-message">{{ toast.message }}</span>
     </div>
-  </Transition>
+  </TransitionGroup>
 </template>
 
 <style scoped>
@@ -31,7 +31,9 @@ const { toastState } = useUI();
   z-index: 10000;
   pointer-events: none;
   display: flex;
-  justify-content: center;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
 }
 
 .toast-capsule {
@@ -50,6 +52,7 @@ const { toastState } = useUI();
   min-width: 300px;
   max-width: 480px;
   backdrop-filter: blur(20px);
+  will-change: transform, opacity;
 }
 
 .toast-icon-box {
@@ -81,7 +84,7 @@ const { toastState } = useUI();
 
 /* Animation */
 .toast-spring-enter-active, .toast-spring-leave-active {
-  transition: all 0.4s cubic-bezier(0.19, 1, 0.22, 1);
+  transition: opacity 0.4s cubic-bezier(0.19, 1, 0.22, 1), transform 0.4s cubic-bezier(0.19, 1, 0.22, 1);
 }
 .toast-spring-enter-from, .toast-spring-leave-to {
   opacity: 0;

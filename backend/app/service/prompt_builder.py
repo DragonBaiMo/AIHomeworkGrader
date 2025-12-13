@@ -53,7 +53,7 @@ def build_system_prompt(base_system_prompt: str) -> str:
 
 【输出规范（必须严格遵守）】
 1. 你必须只输出一个 Markdown 代码块，代码块语言标注为 json；除代码块外不要输出任何解释文字。
-2. 代码块内必须是一个 JSON 对象（不得为数组），并且必须输出 schema_version=2 的结构，字段名、层级、类型都不可更改，不得新增或遗漏字段。
+2. 代码块内必须是一个 JSON 对象（不得为数组），并且必须输出 schema_version=2 的结构，字段名、层级、类型都不可更改，不得新增或遗漏字段，不得插入 `model` 或其他非明示字段。
 3. 你必须逐条细则给分：每个 items.score 必须在 0～该细则满分 之间。
 4. 你不需要输出任何总分字段（总分与换算由后端根据评分规则自动计算），只需要输出细则分与评语。
 5. comment 与各 comment 字段必须为中文，说明扣分原因，不得泄露任何密钥信息。
@@ -112,7 +112,6 @@ def _render_output_skeleton(expected: RubricExpected, score_target_max: float) -
         "category_name": expected.category_name,
         "comment": "（占位符：请填写总体评语，中文≤150字）",
         "sections": sections_out,
-        "model": "（占位符：请填写实际模型名称）",
     }
 
 

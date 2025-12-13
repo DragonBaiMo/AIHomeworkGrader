@@ -195,13 +195,13 @@ body::before {
   to { opacity: 1; transform: translateY(0); } 
 }
 
-.pop-scale-enter-active, .pop-scale-leave-active { transition: all 0.2s var(--ease-spring); }
+.pop-scale-enter-active, .pop-scale-leave-active { transition: opacity 0.2s var(--ease-spring), transform 0.2s var(--ease-spring); }
 .pop-scale-enter-from, .pop-scale-leave-to { opacity: 0; transform: scale(0.95); }
 
-.fade-slide-enter-active, .fade-slide-leave-active { transition: all 0.3s var(--ease-out); }
+.fade-slide-enter-active, .fade-slide-leave-active { transition: opacity 0.3s var(--ease-out), transform 0.3s var(--ease-out); }
 .fade-slide-enter-from, .fade-slide-leave-to { opacity: 0; transform: translateY(10px); }
 
-.stack-anim-enter-active, .stack-anim-leave-active { transition: all 0.3s var(--ease-spring); }
+.stack-anim-enter-active, .stack-anim-leave-active { transition: opacity 0.3s var(--ease-spring), transform 0.3s var(--ease-spring); }
 .stack-anim-enter-from, .stack-anim-leave-to { opacity: 0; transform: translateX(-10px); }
 
 /* Common Components overrides */

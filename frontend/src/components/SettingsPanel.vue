@@ -223,7 +223,7 @@ function handlePromptSetting<T extends keyof PromptSettings>(key: T, value: Prom
   font-size: 13px; font-weight: 600;
   cursor: pointer;
   border: 1px solid transparent;
-  transition: all 0.2s;
+  transition: transform 0.2s, box-shadow 0.2s, background-color 0.2s;
 }
 .action-btn.primary { background: var(--brand); color: #fff; box-shadow: 0 4px 12px rgba(var(--brand-rgb), 0.25); }
 .action-btn.primary:hover { transform: translateY(-1px); box-shadow: 0 8px 20px rgba(var(--brand-rgb), 0.35); }
@@ -264,7 +264,7 @@ function handlePromptSetting<T extends keyof PromptSettings>(key: T, value: Prom
   border-radius: 8px;
   color: var(--txt-primary);
   font-size: 14px;
-  transition: all 0.2s;
+  transition: border-color 0.2s;
 }
 .modern-input.font-mono { font-family: 'JetBrains Mono', monospace; font-size: 13px; }
 .modern-input:focus { outline: none; border-color: var(--brand); }
@@ -302,15 +302,15 @@ function handlePromptSetting<T extends keyof PromptSettings>(key: T, value: Prom
   background: var(--bg-active);
   border-radius: 99px;
   border: 1px solid var(--border-dim);
-  transition: all 0.3s;
+  transition: background-color 0.3s, border-color 0.3s;
 }
 .switch-knob {
   position: absolute; top: 2px; left: 2px;
   width: 18px; height: 18px;
-  background: #fff;
+  background: var(--txt-primary);
   border-radius: 50%;
   box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 .ios-switch input:checked + .switch-body { background: var(--brand); border-color: var(--brand); }
 .ios-switch input:checked + .switch-body .switch-knob { transform: translateX(20px); }

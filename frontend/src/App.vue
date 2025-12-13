@@ -401,7 +401,7 @@ onMounted(() => {
 }
 @keyframes breathe {
   0%, 100% { transform: scale(0.8); opacity: 0.3; }
-  50% { transform: scale(1.1); opacity: 0.6; border-color: var(--brand-dim); }
+  50% { transform: scale(1.1); opacity: 0.6; }
 }
 
 /* Nav Items */
@@ -414,7 +414,7 @@ onMounted(() => {
   color: var(--txt-tertiary);
   cursor: pointer;
   display: flex; align-items: center; justify-content: center;
-  transition: all 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+  transition: background-color 0.3s cubic-bezier(0.25, 1, 0.5, 1), color 0.3s cubic-bezier(0.25, 1, 0.5, 1), border-color 0.3s cubic-bezier(0.25, 1, 0.5, 1), box-shadow 0.3s cubic-bezier(0.25, 1, 0.5, 1), transform 0.3s cubic-bezier(0.25, 1, 0.5, 1);
 }
 .nav-item:hover {
   background: var(--bg-hover);
@@ -452,7 +452,7 @@ onMounted(() => {
   color: var(--txt-secondary);
   cursor: pointer;
   display: flex; align-items: center; justify-content: center;
-  transition: all 0.2s;
+  transition: background-color 0.2s, color 0.2s;
 }
 .theme-btn:hover { background: var(--bg-hover); color: var(--txt-primary); }
 
@@ -466,7 +466,7 @@ onMounted(() => {
   width: 8px; height: 8px; border-radius: 50%;
   background: var(--success);
   box-shadow: 0 0 8px var(--success-bg);
-  transition: all 0.3s;
+  transition: background-color 0.3s, box-shadow 0.3s, transform 0.3s;
 }
 .status-indicator.is-busy .dot {
   background: var(--brand);

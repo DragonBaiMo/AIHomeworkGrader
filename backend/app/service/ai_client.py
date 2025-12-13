@@ -181,8 +181,33 @@ class AIClient:
         if start == -1 or end == -1 or end <= start:
             raise ValueError("未在模型输出中找到 JSON 对象")
         snippet = text[start : end + 1]
-        return json.loads(snippet)
+        try:
+            return json.loads(snippet)
+        except json.JSONDecodeError:
+            repaired = self._attempt_repair_json(snippet)
+            if repaired:
+                return repaired
+            raise
 
+    @staticmethod
+    def _attempt_repair_json(snippet: str) -> dict[str, Any] | None:
+        """尝试修复常见的 JSON 结构错误（如 model 在 sections 内）。"""
+        import re
+
+        model_match = re.search(r'\n\s*"model":\s*".*?"', snippet)
+        if not model_match:
+            return None
+        model_line = model_match.group(0).strip()
+        snippet_fixed = snippet[: model_match.start()] + snippet[model_match.end() :]
+        closing_match = re.search(r'\n\s*]\s*\n}', snippet_fixed)
+        if not closing_match:
+            return None
+        replacement = "\n  ],\n  " + model_line + "\n}"
+        snippet_fixed = snippet_fixed[: closing_match.start()] + replacement
+        try:
+            return json.loads(snippet_fixed)
+        except json.JSONDecodeError:
+            return None
     @staticmethod
     def _normalize_response(data: Dict[str, Any], expected: RubricExpected, score_target_max: float) -> Dict[str, Any]:
         """将接口返回的评分结果标准化（schema_version=2），并按目标满分进行比例换算。
