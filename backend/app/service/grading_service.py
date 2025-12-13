@@ -394,6 +394,7 @@ class GradingService:
                                 "comment": r.get("comment"),
                                 "error_message": r.get("error_message"),
                                 "latency_ms": r.get("latency_ms"),
+                                "sections": (r.get("normalized_result") or {}).get("sections") if r.get("status") == "success" else None,
                             }
                             for r in model_results
                         ],
