@@ -85,6 +85,14 @@ def test_export_results_layout_option_b_sheets_and_headers(tmp_path: Path) -> No
     workbook = load_workbook(path)
     assert workbook.sheetnames == ["成绩总览", "批改模型结果", "维度汇总", "细则明细", "批次总览", "错误"]
 
+    # 生产环境增强：自动筛选 + Excel 表格（部分工作表）
+    assert workbook["成绩总览"].auto_filter.ref is not None
+    assert "TblOverview" in workbook["成绩总览"].tables
+    assert workbook["批改模型结果"].auto_filter.ref is not None
+    assert "TblModels" in workbook["批改模型结果"].tables
+    assert workbook["错误"].auto_filter.ref is not None
+    assert "TblErrors" in workbook["错误"].tables
+
     overview_headers = [cell.value for cell in workbook["成绩总览"][1]]
     assert "最终分（目标满分）" in overview_headers
     assert "成功模型数" in overview_headers
@@ -120,3 +128,12 @@ def test_export_results_layout_option_b_sheets_and_headers(tmp_path: Path) -> No
     crit_last = [cell.value for cell in workbook["细则明细"][workbook["细则明细"].max_row]]
     assert crit_last[0] == " "
     assert all(v is None for v in crit_last[1:])
+
+    # 独立异常清单也应具备筛选与表格
+    exporter.export_errors([{"file_name": "李四.docx", "error_type": "解析校验错误", "error_message": "解析失败"}])
+    err_path = tmp_path / "error_list.xlsx"
+    err_wb = load_workbook(err_path)
+    assert err_wb.sheetnames == ["异常清单"]
+    err_ws = err_wb["异常清单"]
+    assert err_ws.auto_filter.ref is not None
+    assert "TblErrorList" in err_ws.tables

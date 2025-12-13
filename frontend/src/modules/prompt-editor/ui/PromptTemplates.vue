@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed, watch } from "vue";
+import { ref, onMounted, computed, watch, nextTick } from "vue";
 import { fetchPromptTemplates, savePromptTemplates, fetchPromptConfig } from "@/api/client";
 import type { PromptConfig } from "@/api/types";
 import { useUI } from "@/shared/composables/useUI";
@@ -13,9 +13,22 @@ const saving = ref(false);
 const activeSectionKey = ref("system");
 const hasValidationErrors = ref(false);
 
+const textareaRef = ref<HTMLTextAreaElement | null>(null);
+const highlightRef = ref<HTMLPreElement | null>(null);
+
 const REQUIRED_VARS: Record<string, string[]> = {
   rubric_user_template: ["{{RUBRIC_HUMAN_TEXT}}", "{{OUTPUT_SKELETON_JSON}}", "{{HOMEWORK_TEXT}}"],
-  overall_comment_user: ["{{MODEL_RESULTS_JSON}}"],
+  overall_comment_user: ["{{CATEGORY}}", "{{SCORE_TARGET_MAX}}", "{{AGG_SCORE}}", "{{MODEL_RESULTS_JSON}}"],
+};
+
+const VARIABLE_DESCRIPTIONS: Record<string, string> = {
+  "{{RUBRIC_HUMAN_TEXT}}": "作业的评分标准，以人类可读的Markdown格式呈现。",
+  "{{OUTPUT_SKELETON_JSON}}": "期望大模型输出的JSON结构骨架，包含所有评分维度和细则。",
+  "{{HOMEWORK_TEXT}}": "学生提交的作业正文内容。",
+  "{{CATEGORY}}": "当前作业的分类名称，如“职业规划书”。",
+  "{{SCORE_TARGET_MAX}}": "本次批改的目标满分，例如 60 分。",
+  "{{AGG_SCORE}}": "多个模型批改结果聚合后的总分（仅供参考）。",
+  "{{MODEL_RESULTS_JSON}}": "包含所有模型批改结果的JSON字符串，可能包含失败记录。",
 };
 
 const SECTION_GROUPS = [
@@ -31,7 +44,7 @@ const SECTION_GROUPS = [
   },
 ];
 
-const SECTION_META: Record<string, { label: string; desc: string }> = {
+const SECTION_META: Record<string, { label: string; desc: string; hint?: string }> = {
   system: {
     label: "AI 角色设定 (System)",
     desc: "定义 AI 在整个批改任务中的核心人设、语气与基本原则（最高优先级）。",
@@ -51,6 +64,7 @@ const SECTION_META: Record<string, { label: string; desc: string }> = {
   rubric_user_template: {
     label: "评分任务模板 (User)",
     desc: "构建评分任务的最终 Prompt 骨架，包含评分标准与作业正文。",
+    hint: "此模板需要包含以下变量：{{RUBRIC_HUMAN_TEXT}}、{{OUTPUT_SKELETON_JSON}}、{{HOMEWORK_TEXT}}。",
   },
 };
 
@@ -67,9 +81,11 @@ async function loadData() {
     promptConfig.value = cfg;
     
     // 确保默认选中第一个
-    if (!activeSectionKey.value) {
+    if (!activeSectionKey.value || !(sections.value[activeSectionKey.value] !== undefined || categoryKeys.value.includes(activeSectionKey.value))) {
       activeSectionKey.value = "system";
     }
+    await nextTick(); // Ensure DOM is updated before syncing scroll
+    syncScroll();
   } catch (e) {
     showToast((e as Error).message, "error");
   } finally {
@@ -77,36 +93,95 @@ async function loadData() {
   }
 }
 
+function getCategoryLabel(key: string) {
+  if (!promptConfig.value) return key;
+  return promptConfig.value.categories[key]?.display_name || key;
+}
+
+function escapeHtml(text: string) {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+// 占位符高亮
+const highlightedContent = computed(() => {
+  const content = sections.value[activeSectionKey.value] || "";
+  let safe = escapeHtml(content);
+  
+  // 高亮 {{...}} 变量
+  safe = safe.replace(/\{\{([^}]+)\}\}/g, '<span class="variable-placeholder">{{$1}}</span>');
+  // 高亮占位符提示文本
+  safe = safe.replace(/（占位符：([^）]+)）/g, '<span class="hint-placeholder">（占位符：$1）</span>');
+  
+  // Handle trailing newline to match textarea behavior
+  if (content.endsWith("\n")) {
+    safe += "<br>";
+  }
+  
+  return safe;
+});
+
 // 验证逻辑
 const missingVars = computed(() => {
   const key = activeSectionKey.value;
   const content = sections.value[key] || "";
   
-  // 如果是分类覆盖（override），则它也必须包含 User Template 的核心变量
-  // 或者是默认模板，我们也检查
   let required: string[] = [];
   
   if (REQUIRED_VARS[key]) {
     required = REQUIRED_VARS[key];
   } else if (categoryKeys.value.includes(key)) {
-    // 分类覆盖也被视为 rubric_user_template 的变体
-    required = REQUIRED_VARS["rubric_user_template"];
+    // 分类覆盖如果不是占位符，则需要包含 rubric_user_template 的核心变量
+    if (!isPlaceholder(content)) {
+      required = REQUIRED_VARS["rubric_user_template"];
+    }
   }
   
   if (required.length === 0) return [];
   
-  // 如果内容是占位符，则不校验（因为运行时会回退到默认模板）
-  if (content.trim().startsWith("（占位符：")) {
+  // 如果内容是占位符，则不校验
+  if (isPlaceholder(content)) {
     return [];
   }
   
   return required.filter(v => !content.includes(v));
 });
 
+// 当前活跃模板的占位符说明
+const placeholderHints = computed(() => {
+  const key = activeSectionKey.value;
+  let vars: string[] = [];
+
+  if (REQUIRED_VARS[key]) {
+    vars = REQUIRED_VARS[key];
+  } else if (categoryKeys.value.includes(key)) {
+    vars = REQUIRED_VARS["rubric_user_template"];
+  }
+
+  return vars.map(v => ({
+    variable: v,
+    description: VARIABLE_DESCRIPTIONS[v] || "未知变量"
+  }));
+});
+
 watch(missingVars, (vars) => {
   hasValidationErrors.value = vars.length > 0;
 });
 
+watch(() => sections.value[activeSectionKey.value], () => {
+  nextTick(syncScroll);
+}, { flush: 'post' }); // Ensure DOM is updated before syncing
+
+function syncScroll() {
+  if (textareaRef.value && highlightRef.value) {
+    highlightRef.value.scrollTop = textareaRef.value.scrollTop;
+    highlightRef.value.scrollLeft = textareaRef.value.scrollLeft;
+  }
+}
 
 async function handleSave() {
   if (missingVars.value.length > 0) {
@@ -131,11 +206,6 @@ function handleReset() {
 
 function isPlaceholder(content: string) {
   return (content || "").trim().startsWith("（占位符：");
-}
-
-function getCategoryLabel(key: string) {
-  if (!promptConfig.value) return key;
-  return promptConfig.value.categories[key]?.display_name || key;
 }
 
 onMounted(() => {
@@ -212,25 +282,37 @@ onMounted(() => {
       <div class="editor-content" v-if="activeSectionKey">
         <div class="editor-wrapper">
            <textarea
+            ref="textareaRef"
             v-model="sections[activeSectionKey]"
             class="code-editor custom-scrollbar"
             :class="{ 'has-error': hasValidationErrors }"
             spellcheck="false"
             placeholder="在此输入 Markdown 内容..."
+            @scroll="syncScroll"
+            @input="syncScroll"
           ></textarea>
+          <pre ref="highlightRef" class="highlight-overlay custom-scrollbar" v-html="highlightedContent"></pre>
         </div>
 
         <div class="validation-bar" v-if="missingVars.length > 0">
            <span class="error-icon">⚠️</span>
-           <span class="error-text">缺失必要变量：{{ missingVars.join(", ") }}</span>
+           <span class="error-text">当前模板缺失以下必要变量：
+             <span v-for="(v, idx) in missingVars" :key="v">
+               <code class="missing-var">{{ v }}</code><span v-if="idx < missingVars.length - 1">, </span>
+             </span>
+             。请补全后保存。
+           </span>
         </div>
         
         <div class="editor-footer">
-           <div class="hints">
-             <span v-if="categoryKeys.includes(activeSectionKey) && isPlaceholder(sections[activeSectionKey])">
-               当前内容为占位符，系统将自动使用 <b>rubric_user_template</b> 进行批改。
-             </span>
+           <div class="hints-section" v-if="placeholderHints.length > 0">
+             <div class="hint-item" v-for="hint in placeholderHints" :key="hint.variable">
+               <code class="variable-name">{{ hint.variable }}</code>: {{ hint.description }}
+             </div>
            </div>
+           <span v-if="categoryKeys.includes(activeSectionKey) && isPlaceholder(sections[activeSectionKey])" class="footer-hint">
+             当前内容为占位符，系统将自动使用 <b>rubric_user_template</b> 进行批改。
+           </span>
            <span class="char-count">Length: {{ (sections[activeSectionKey] || "").length }}</span>
         </div>
       </div>
@@ -350,20 +432,72 @@ onMounted(() => {
 
 .code-editor {
   flex: 1;
-  background: var(--bg-panel);
+  background: transparent !important; /* Make it transparent to show overlay */
   border: 1px solid var(--border-dim);
   border-radius: 12px;
   padding: 20px;
   font-family: 'JetBrains Mono', monospace;
   font-size: 14px;
   line-height: 1.6;
+  letter-spacing: 0; /* Explicitly set to avoid browser differences */
   color: var(--txt-primary);
   resize: none;
   box-shadow: inset 0 2px 4px rgba(0,0,0,0.01);
   transition: border-color 0.2s;
+  position: absolute; /* Position over the overlay */
+  top: 0; left: 0; right: 0; bottom: 0;
+  width: 100%; height: 100%;
+  overflow: auto;
+  white-space: pre-wrap; /* Ensure wrapping like pre */
+  word-break: break-all;
+  z-index: 2; /* Bring textarea to front */
+  caret-color: var(--brand); /* Custom caret color */
 }
 .code-editor:focus { outline: none; border-color: var(--brand); }
-.code-editor.has-error { border-color: var(--error); background: rgba(var(--error-rgb), 0.02); }
+.code-editor.has-error { border-color: var(--error); background: rgba(var(--error-rgb), 0.02) !important; }
+
+.highlight-overlay {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  width: 100%; height: 100%;
+  background: var(--bg-panel); /* Background behind textarea */
+  border: 1px solid var(--border-dim);
+  border-radius: 12px;
+  padding: 20px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 14px;
+  line-height: 1.6;
+  letter-spacing: 0; /* Sync with textarea */
+  color: transparent; /* Hide text */
+  overflow: auto; /* Sync scroll with textarea */
+  white-space: pre-wrap;
+  word-break: break-all;
+  pointer-events: none; /* Allow clicks to pass through */
+  z-index: 1; /* Behind textarea */
+  box-sizing: border-box; /* Include padding in width/height */
+}
+
+/* Scrollbar for transparent textarea and overlay */
+.code-editor::-webkit-scrollbar, .highlight-overlay::-webkit-scrollbar { width: 8px; }
+.code-editor::-webkit-scrollbar-thumb, .highlight-overlay::-webkit-scrollbar-thumb { background: rgba(120, 120, 120, 0.4); border-radius: 4px; }
+.code-editor::-webkit-scrollbar-track, .highlight-overlay::-webkit-scrollbar-track { background: transparent; }
+
+
+.variable-placeholder {
+  /* color: transparent; Kept transparent to avoid ghosting */
+  background: rgba(var(--brand-rgb), 0.2); /* More visible background */
+  border-radius: 4px;
+  color: transparent; 
+  box-shadow: 0 0 0 1px rgba(var(--brand-rgb), 0.1); /* Subtle border for better definition */
+}
+
+.hint-placeholder {
+  /* color: transparent; Kept transparent to avoid ghosting */
+  background: rgba(var(--warning-rgb), 0.2);
+  border-radius: 4px;
+  color: transparent;
+  box-shadow: 0 0 0 1px rgba(var(--warning-rgb), 0.1);
+}
 
 .validation-bar {
   display: flex; align-items: center; gap: 10px;
@@ -375,14 +509,42 @@ onMounted(() => {
   font-size: 13px; font-weight: 600;
   animation: slideUp 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
-@keyframes slideUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+.missing-var {
+  font-family: 'JetBrains Mono', monospace;
+  background: rgba(var(--error-rgb), 0.2);
+  padding: 1px 4px;
+  border-radius: 4px;
+}
 
 .editor-footer {
-  display: flex; justify-content: space-between; align-items: center;
+  display: flex; flex-direction: column; align-items: flex-start; gap: 10px;
   font-size: 12px; color: var(--txt-tertiary);
   font-family: 'JetBrains Mono';
+  line-height: 1.5;
 }
-.hints b { color: var(--txt-secondary); }
+.hints-section {
+  display: flex; flex-direction: column; gap: 5px;
+  background: var(--bg-hover);
+  border: 1px solid var(--border-dim);
+  border-radius: 8px;
+  padding: 10px 15px;
+  width: 100%;
+}
+.hint-item {
+  display: flex; align-items: flex-start; gap: 8px;
+  color: var(--txt-secondary);
+}
+.variable-name {
+  color: var(--brand);
+  font-weight: 600;
+}
+.char-count { align-self: flex-end; margin-top: 5px; }
+.footer-hint {
+  width: 100%;
+  text-align: right;
+  color: var(--txt-tertiary);
+}
+
 
 .empty-state {
   flex: 1;
