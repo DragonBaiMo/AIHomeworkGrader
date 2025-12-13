@@ -28,7 +28,7 @@ def test_export_results_contains_multi_model_headers(tmp_path: Path) -> None:
                 "error_message": None,
                 "comment": "总体评语",
                 "detail_json": None,
-                "aggregate_strategy": "median",
+                "aggregate_strategy": "mean",
                 "grader_results": [
                     {"model_index": 1, "api_url": "http://a", "model_name": "m1", "score": 55, "comment": "c1", "error_message": None, "latency_ms": 100},
                     {"model_index": 2, "api_url": "http://a", "model_name": "m2", "score": 57, "comment": "c2", "error_message": None, "latency_ms": 120},
@@ -45,6 +45,12 @@ def test_export_results_contains_multi_model_headers(tmp_path: Path) -> None:
     sheet = workbook["成绩总表"]
     headers = [cell.value for cell in sheet[1]]
     assert "聚合算法" in headers
-    assert "默认模型接口" in headers
-    assert "追加模型1名称" in headers
-    assert "追加模型2耗时ms" in headers
+    assert "默认模型分数" in headers
+    assert "追加模型1分数" in headers
+    assert "追加模型2分数" in headers
+
+    sheet_default = workbook["默认模型结果"]
+    headers_default = [cell.value for cell in sheet_default[1]]
+    assert "接口" in headers_default
+    assert "模型名称" in headers_default
+    assert "耗时ms" in headers_default

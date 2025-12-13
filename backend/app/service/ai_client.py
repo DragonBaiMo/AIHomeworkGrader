@@ -69,7 +69,16 @@ class AIClient:
             try:
                 async with httpx.AsyncClient(timeout=DEFAULT_MODEL_TIMEOUT) as client:
                     resp = await client.post(self.api_url, json=payload, headers=headers)
-                    resp.raise_for_status()
+                    try:
+                        resp.raise_for_status()
+                    except httpx.HTTPStatusError as exc:
+                        status_code = exc.response.status_code
+                        last_kind = "call"
+                        if status_code in (401, 403):
+                            raise ModelError("模型鉴权失败（401/403），请检查 API Key/权限配置是否正确。", kind="call") from exc
+                        if 400 <= status_code < 500 and status_code not in (408, 429):
+                            raise ModelError(f"模型请求被拒绝（HTTP {status_code}），请检查接口地址、请求格式与权限配置。", kind="call") from exc
+                        raise
                     data = resp.json()
 
                 try:
@@ -103,6 +112,83 @@ class AIClient:
                     if last_kind == "call":
                         raise ModelError("模型调用失败或超时，已重试 3 次仍失败", raw_response=last_raw, kind=last_kind) from exc
                     raise ModelError("模型返回内容不合格，已重试 3 次仍失败", raw_response=last_raw, kind=last_kind) from exc
+        raise ModelError("模型调用失败：未知错误", raw_response=last_raw, kind=last_kind) from last_exc
+
+    async def chat_json(
+        self,
+        *,
+        system_prompt: str,
+        user_prompt: str,
+        required_fields: tuple[str, ...] = ("comment",),
+    ) -> tuple[str, Dict[str, Any]]:
+        """
+        通用 JSON 生成接口：调用模型并要求只返回一个 JSON 对象。
+
+        - 会对“调用失败/超时”和“返回结构/JSON 解析失败”分别重试，最多 3 次。
+        - required_fields 用于做最基本的字段存在性校验。
+        """
+        if self.mock:
+            raise ModelError("模拟模式不支持生成总体评语", kind="parse")
+        if not self.api_url:
+            raise ModelError("未配置模型接口地址", kind="call")
+
+        headers = {"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ]
+        payload = {
+            "model": self.model_name,
+            "messages": messages,
+            "temperature": 0.2,
+        }
+
+        last_exc: Optional[Exception] = None
+        last_raw: Optional[str] = None
+        last_kind: str = "unknown"
+        for attempt in range(3):
+            try:
+                async with httpx.AsyncClient(timeout=DEFAULT_MODEL_TIMEOUT) as client:
+                    resp = await client.post(self.api_url, json=payload, headers=headers)
+                    resp.raise_for_status()
+                    data = resp.json()
+
+                try:
+                    content_text = data["choices"][0]["message"]["content"]
+                except Exception as exc:  # noqa: BLE001
+                    last_raw = json.dumps(data, ensure_ascii=False)
+                    last_kind = "parse"
+                    raise ValueError("模型返回结构异常，缺少 choices.message.content 字段") from exc
+
+                try:
+                    parsed = self._parse_json_from_text(content_text)
+                except Exception as exc:  # noqa: BLE001
+                    last_raw = content_text
+                    last_kind = "parse"
+                    raise ValueError("模型未按要求返回合法 JSON") from exc
+
+                if not isinstance(parsed, dict):
+                    last_raw = content_text
+                    last_kind = "parse"
+                    raise ValueError("模型返回 JSON 非对象")
+
+                for field in required_fields:
+                    if field not in parsed:
+                        last_raw = content_text
+                        last_kind = "parse"
+                        raise ValueError(f"模型返回缺少必填字段：{field}")
+
+                return content_text, parsed
+            except Exception as exc:  # noqa: BLE001
+                last_exc = exc
+                if isinstance(exc, httpx.HTTPError):
+                    last_kind = "call"
+                logger.warning("模型调用或解析失败（JSON模式），第 %d 次尝试：%s", attempt + 1, exc)
+                if attempt == 2:
+                    if last_kind == "call":
+                        raise ModelError("模型调用失败或超时，已重试 3 次仍失败", raw_response=last_raw, kind=last_kind) from exc
+                    raise ModelError("模型返回内容不合格，已重试 3 次仍失败", raw_response=last_raw, kind=last_kind) from exc
+
         raise ModelError("模型调用失败：未知错误", raw_response=last_raw, kind=last_kind) from last_exc
 
     def _mock_grade(

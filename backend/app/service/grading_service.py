@@ -143,6 +143,51 @@ class GradingService:
                     "latency_ms": latency_ms,
                 }
 
+    @staticmethod
+    def _build_overall_comment_prompts(
+        *,
+        category: str,
+        score_target_max: float,
+        aggregate_score: float,
+        model_results: list[dict],
+    ) -> tuple[str, str]:
+        system_prompt = (
+            "你是一名严格的高校教师，负责给学生作业写“总体评语”。\n"
+            "你必须只输出一个 JSON 对象，不要输出任何解释文字，不要使用 Markdown 代码块。\n"
+            "JSON 结构如下：\n"
+            '{\n'
+            '  "comment": "中文总体评语，建议 120-220 字，包含优点+不足+改进建议，避免空泛",\n'
+            '  "strengths": ["优点1", "优点2"],\n'
+            '  "suggestions": ["建议1", "建议2"]\n'
+            '}\n'
+            "约束：comment 必须为非空中文字符串；strengths/suggestions 允许为空数组；不要包含分数字段。"
+        )
+
+        compact_models: list[dict] = []
+        for r in model_results:
+            if not isinstance(r, dict):
+                continue
+            compact_models.append(
+                {
+                    "model_index": r.get("model_index"),
+                    "model_name": r.get("model_name"),
+                    "status": r.get("status"),
+                    "score": r.get("score"),
+                    "comment": r.get("comment"),
+                    "error_message": r.get("error_message"),
+                }
+            )
+
+        user_prompt = (
+            "请基于下列“多模型批改结果”给出总体评语（不要提及具体分数）。\n"
+            f"作业分类：{category}\n"
+            f"目标满分：{score_target_max}\n"
+            f"聚合分（仅供参考）：{aggregate_score}\n"
+            f"多模型结果（可能含失败）：{json.dumps(compact_models, ensure_ascii=False)}\n"
+            "输出要求：严格按 system 指定 JSON 输出。"
+        )
+        return system_prompt, user_prompt
+
     async def process(self, files: Iterable[UploadFile], config: GradeConfig) -> GradeResponse:
         """执行批次处理，并返回标准化响应。"""
         batch_id = generate_batch_id()
@@ -151,6 +196,7 @@ class GradingService:
         prompt_config = load_prompt_config()
         auditor = AuditLogger(batch_id)
         model_endpoints = self._resolve_model_endpoints(config)
+        logger.info("本批次启用模型数=%d（默认+追加），并发：文件=5，模型=2/接口，单次超时=300秒，重试=3次", len(model_endpoints))
         auditor.save_meta(
             {
                 "template": config.template,
@@ -246,7 +292,7 @@ class GradingService:
                             error_message=f"所有模型评分失败：{message}",
                             raw_text_length=raw_length,
                             raw_response=None,
-                            aggregate_strategy="median",
+                            aggregate_strategy="mean",
                             grader_results=[
                                 {
                                     "model_index": r.get("model_index"),
@@ -263,10 +309,53 @@ class GradingService:
                         )
                         return item, {"file_name": file_path.name, "error_type": "模型调用错误", "error_message": item.error_message}
 
+                    default_result = next((r for r in model_results if int(r.get("model_index") or 0) == 1), None)
+
                     scores_success = [float(r.get("score")) for r in success]
-                    median_score = float(statistics.median(scores_success))
-                    picked = self._pick_representative_result(success, median_score)
-                    normalized_result = picked.get("normalized_result") or {}
+                    mean_score = float(statistics.mean(scores_success))
+                    picked = self._pick_representative_result(success, mean_score)
+                    normalized_result = (picked or {}).get("normalized_result") or {}
+
+                    overall_comment = normalized_result.get("comment")
+                    if config.models and not config.mock:
+                        try:
+                            main_endpoint = model_endpoints[0]
+                            sem = await _get_model_semaphore(main_endpoint.api_url)
+                            system2, user2 = self._build_overall_comment_prompts(
+                                category=str(category),
+                                score_target_max=float(config.score_target_max),
+                                aggregate_score=float(mean_score),
+                                model_results=[
+                                    {
+                                        "model_index": r.get("model_index"),
+                                        "model_name": r.get("model_name"),
+                                        "status": "成功" if r.get("status") == "success" else "失败",
+                                        "score": r.get("score"),
+                                        "comment": r.get("comment"),
+                                        "error_message": r.get("error_message"),
+                                    }
+                                    for r in model_results
+                                ],
+                            )
+                            async with sem:
+                                client2 = AIClient(main_endpoint.api_url, main_endpoint.api_key, main_endpoint.model_name, mock=False)
+                                raw2, parsed2 = await client2.chat_json(system_prompt=system2, user_prompt=user2, required_fields=("comment",))
+                            auditor.save_model_interaction(
+                                file_path.name,
+                                system2,
+                                user2,
+                                {"overall_review": parsed2},
+                                model_id="overall_comment",
+                                resolved_user_prompt=None,
+                                raw_response=raw2,
+                                status="success",
+                            )
+                            overall_comment = str(parsed2.get("comment") or "").strip() or overall_comment
+                            normalized_result["overall_review"] = parsed2
+                        except Exception as exc:  # noqa: BLE001
+                            logger.warning("总体评语生成失败（多模型模式）：%s -> %s", file_path.name, exc)
+                            auditor.append_error(file_path.name, f"总体评语生成失败：{exc}")
+
                     detail_json = json.dumps(normalized_result, ensure_ascii=False)
 
                     for r in model_results:
@@ -285,16 +374,16 @@ class GradingService:
                         file_name=file_path.name,
                         student_id=student_id,
                         student_name=student_name,
-                        score=round(median_score, 2),
+                        score=round(mean_score, 2),
                         score_rubric_max=normalized_result.get("score_rubric_max"),
                         score_rubric=normalized_result.get("score_rubric"),
                         detail_json=detail_json,
-                        comment=normalized_result.get("comment"),
+                        comment=overall_comment,
                         status="成功",
                         error_message=None,
                         raw_text_length=raw_length,
                         raw_response=None,
-                        aggregate_strategy="median",
+                        aggregate_strategy="mean",
                         grader_results=[
                             {
                                 "model_index": r.get("model_index"),
@@ -328,7 +417,7 @@ class GradingService:
                             error_message=str(exc),
                             raw_text_length=0,
                             raw_response=None,
-                            aggregate_strategy="median",
+                            aggregate_strategy="mean",
                             grader_results=None,
                         ),
                         {"file_name": file_path.name, "error_type": "解析校验错误", "error_message": str(exc)},
@@ -354,6 +443,10 @@ class GradingService:
                 "批次ID": batch_id,
                 "目标满分": float(config.score_target_max),
                 "规则满分（可能多值）": " / ".join(str(v) for v in rubric_max_values) if rubric_max_values else "",
+                "模型列表": "；".join([f"{m.model_name}@{m.api_url}" for m in model_endpoints]) if model_endpoints else "",
+                "聚合算法": "平均分（成功模型）",
+                "多模型总体评语": "启用多模型时，会用主模型二次生成总体评语（JSON）",
+                "并发限制": "文件=5；模型=2/接口；单次超时=300秒；重试=3次",
                 "文件总数": len(grade_items),
                 "成功数": len(scores),
                 "失败数": len(grade_items) - len(scores),

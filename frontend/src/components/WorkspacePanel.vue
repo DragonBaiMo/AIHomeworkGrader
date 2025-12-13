@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import type { GradeConfigPayload, GradeResponse, TemplateOption } from "@/api/types";
+import { useUI } from "@/composables/useUI";
 
 const props = defineProps<{
   config: GradeConfigPayload;
@@ -17,6 +18,8 @@ const emit = defineEmits<{
   (e: "clear-result"): void;
   (e: "clear-all-cache"): void;
 }>();
+
+const { showToast } = useUI();
 
 const files = ref<File[]>([]);
 const dragOver = ref(false);
@@ -41,14 +44,14 @@ function closeDropdown() {
 }
 
 const Icons = {
-  Upload: `<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M12 12v9"/><path d="m16 16-4-4-4 4"/></svg>`,
-  Doc: `<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>`,
-  Check: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`,
+  Upload: `<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M12 12v9"/><path d="m16 16-4-4-4 4"/></svg>`,
+  Doc: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>`,
+  Check: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`,
   Download: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`,
-  Trash: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>`,
-  Alert: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>`,
-  ChevronDown: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>`,
-  Search: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>`
+  Trash: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>`,
+  Alert: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`,
+  ChevronDown: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>`,
+  Search: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>`
 };
 
 const fileSummary = computed(() => {
@@ -166,7 +169,7 @@ function handleSubmit() {
 function downloadResultExcel() {
   const url = props.result?.download_result_url;
   if (!url) {
-    window.alert("暂无可下载的成绩表，请先完成一次批改。");
+    showToast("暂无可下载的成绩表，请先完成一次批改。", "warning");
     return;
   }
   window.location.href = url;
@@ -228,9 +231,9 @@ function updateConfigField<T extends keyof GradeConfigPayload>(key: T, value: Gr
             <div class="text-anchor">
               <h3 v-if="loading" class="zone-title">正在深度分析...</h3>
               <h3 v-else-if="files.length" class="zone-title highlight">{{ fileSummary }}</h3>
-              <h3 v-else class="zone-title">拖入作业文档</h3>
+              <h3 v-else class="zone-title">拖拽文件至此</h3>
               
-              <p v-if="!loading" class="zone-subtitle">支持 .docx / .md / .markdown / .txt</p>
+              <p v-if="!loading" class="zone-subtitle">支持 Word / Markdown / Text 格式</p>
               <p v-if="hint" class="zone-error">{{ hint }}</p>
             </div>
 
@@ -328,9 +331,6 @@ function updateConfigField<T extends keyof GradeConfigPayload>(key: T, value: Gr
           </div>
           <div class="bento-card action-cell">
              <div class="action-stack">
-                <button class="bento-icon-btn" title="清空批改结果" @click="clearResult">
-                   <span v-html="Icons.Trash"></span>
-                </button>
                 <button class="bento-icon-btn" title="下载 Excel" @click="downloadResultExcel">
                    <span v-html="Icons.Download"></span>
                 </button>
@@ -372,107 +372,109 @@ function updateConfigField<T extends keyof GradeConfigPayload>(key: T, value: Gr
               <div class="th col-name">姓名</div>
               <div class="th col-score">成绩</div>
               <div class="th col-status">状态</div>
-              <div class="th col-action">操作</div>
+              <div class="th col-action">展开</div>
             </div>
 
             <!-- List Items -->
             <div class="table-rows">
-              <div 
-                v-for="item in parsedFilteredItems" 
-                :key="item.file_name"
-                class="row-group"
-                :class="{ expanded: expandedRows.has(item.file_name) }"
-              >
-                <div class="table-row" @click="toggleRow(item.file_name)">
-                  <div class="td col-file">
-                    <span class="file-type-icon" v-html="Icons.Doc"></span>
-                    <span class="text-truncate" :title="item.file_name">{{ item.file_name }}</span>
-                  </div>
-                  <div class="td col-id">{{ item.student_id || '-' }}</div>
-                  <div class="td col-name">{{ item.student_name || '-' }}</div>
-                  <div class="td col-score">
-                    <div
-                      class="score-pill"
-                      :class="getScoreClass(item.display_score)"
-                      :title="`目标分：${item.display_score ?? '-'} / ${config.scoreTargetMax}；规则分：${item.score_rubric ?? '-'} / ${item.score_rubric_max ?? '-'}`"
-                    >
-                      <span class="status-dot" :class="getScoreClass(item.display_score) === 'score-high' ? 'ok' : getScoreClass(item.display_score) === 'score-low' ? 'err' : 'warn'"></span>
-                      <span class="score-val">{{ item.display_score ?? '-' }}</span>
-                      <span class="score-max" v-if="item.display_score !== null">/{{ config.scoreTargetMax }}</span>
+              <TransitionGroup name="list">
+                <div 
+                  v-for="item in parsedFilteredItems" 
+                  :key="item.file_name"
+                  class="row-group"
+                  :class="{ expanded: expandedRows.has(item.file_name) }"
+                >
+                  <div class="table-row" @click="toggleRow(item.file_name)">
+                    <div class="td col-file">
+                      <span class="file-type-icon" v-html="Icons.Doc"></span>
+                      <span class="text-truncate" :title="item.file_name">{{ item.file_name }}</span>
                     </div>
-                  </div>
-                  <div class="td col-status">
-                    <span class="status-dot" :class="item.status === '成功' ? 'ok' : 'err'"></span>
-                    {{ item.status }}
-                  </div>
-                  <div class="td col-action">
-                    <span class="chevron-icon" v-html="Icons.ChevronDown"></span>
-                  </div>
-                </div>
-
-                <!-- Expanded Detail -->
-                <div v-if="expandedRows.has(item.file_name)" class="row-detail-panel">
-                  <div class="detail-card">
-                    <div v-if="item.error_message" class="error-box">
-                      <div class="error-title">
-                        <span v-html="Icons.Alert"></span> 异常信息
+                    <div class="td col-id">{{ item.student_id || '-' }}</div>
+                    <div class="td col-name">{{ item.student_name || '-' }}</div>
+                    <div class="td col-score">
+                      <div
+                        class="score-pill"
+                        :class="getScoreClass(item.display_score)"
+                        :title="`目标分：${item.display_score ?? '-'} / ${config.scoreTargetMax}；规则分：${item.score_rubric ?? '-'} / ${item.score_rubric_max ?? '-'}`"
+                      >
+                        <span class="status-dot" :class="getScoreClass(item.display_score) === 'score-high' ? 'ok' : getScoreClass(item.display_score) === 'score-low' ? 'err' : 'warn'"></span>
+                        <span class="score-val">{{ item.display_score ?? '-' }}</span>
+                        <span class="score-max" v-if="item.display_score !== null">/{{ config.scoreTargetMax }}</span>
                       </div>
-                      <pre>{{ item.error_message }}</pre>
                     </div>
+                    <div class="td col-status">
+                      <span class="status-dot" :class="item.status === '成功' ? 'ok' : 'err'"></span>
+                      {{ item.status }}
+                    </div>
+                    <div class="td col-action">
+                      <span class="chevron-icon" v-html="Icons.ChevronDown"></span>
+                    </div>
+                  </div>
 
-                    <div v-else class="rubric-grid">
+                  <!-- Expanded Detail -->
+                  <div v-if="expandedRows.has(item.file_name)" class="row-detail-panel">
+                    <div class="detail-card">
+                      <div v-if="item.error_message" class="error-box">
+                        <div class="error-title">
+                          <span v-html="Icons.Alert"></span> 异常信息
+                        </div>
+                        <pre>{{ item.error_message }}</pre>
+                      </div>
+
+                      <div v-else class="rubric-grid">
                       <div v-if="item.grader_results && item.grader_results.length" class="model-result-panel">
                         <div class="model-result-title">
-                          多模型批改明细（聚合算法：{{ item.aggregate_strategy || 'median' }}）
+                          多模型批改明细
                         </div>
                         <div class="model-result-sub">
-                          汇总分：{{ item.display_score ?? '-' }} / {{ config.scoreTargetMax }}
+                          聚合算法：{{ item.aggregate_strategy || 'mean' }} &nbsp;|&nbsp; 汇总分：{{ item.display_score ?? '-' }} / {{ config.scoreTargetMax }} &nbsp;|&nbsp; 总体评语：多模型下主模型二次生成
                         </div>
-                        <div class="model-result-table">
-                          <div class="model-result-row header">
-                            <div class="c-name">模型</div>
-                            <div class="c-url">接口</div>
-                            <div class="c-score">分数</div>
-                            <div class="c-lat">耗时ms</div>
-                            <div class="c-status">状态</div>
-                            <div class="c-err">错误</div>
-                          </div>
-                          <div v-for="(m, mi) in item.grader_results" :key="mi" class="model-result-row">
-                            <div class="c-name">{{ m.model_name || `模型${m.model_index || (mi + 1)}` }}</div>
-                            <div class="c-url" :title="m.api_url || ''">{{ m.api_url || '-' }}</div>
-                            <div class="c-score">{{ m.score ?? '-' }}</div>
-                            <div class="c-lat">{{ m.latency_ms ?? '-' }}</div>
-                            <div class="c-status">
-                              <span class="status-dot" :class="m.status === '成功' ? 'ok' : 'err'"></span>
-                              {{ m.status || '-' }}
+                          <div class="model-result-table">
+                            <div class="model-result-row header">
+                              <div class="c-name">模型</div>
+                              <div class="c-url">接口地址</div>
+                              <div class="c-score">分数</div>
+                              <div class="c-lat">耗时</div>
+                              <div class="c-status">状态</div>
+                              <div class="c-err">异常信息</div>
                             </div>
-                            <div class="c-err" :title="m.error_message || ''">{{ m.error_message || '-' }}</div>
+                            <div v-for="(m, mi) in item.grader_results" :key="mi" class="model-result-row">
+                              <div class="c-name" :title="m.model_name">{{ m.model_name || `模型${m.model_index || (mi + 1)}` }}</div>
+                              <div class="c-url" :title="m.api_url || ''">{{ m.api_url || '-' }}</div>
+                              <div class="c-score">{{ m.score ?? '-' }}</div>
+                              <div class="c-lat">{{ m.latency_ms ? `${m.latency_ms}ms` : '-' }}</div>
+                              <div class="c-status">
+                                <span class="status-dot" :class="m.status === '成功' ? 'ok' : 'err'"></span>
+                                {{ m.status || '-' }}
+                              </div>
+                              <div class="c-err" :title="m.error_message || ''">{{ m.error_message || '-' }}</div>
+                            </div>
+                          </div>
+                        </div>
+                        <div 
+                          v-for="(rItem, idx) in item.rubric_items" 
+                          :key="idx"
+                          class="rubric-cell"
+                        >
+                          <div class="cell-header">
+                            <span class="cell-dim">{{ rItem.dimension }}</span>
+                            <span class="cell-score">{{ rItem.score }} / {{ rItem.max_score }}</span>
+                          </div>
+                          <div class="cell-comment">{{ rItem.comment }}</div>
+                          <div class="cell-reason" v-if="rItem.reason">
+                             <span class="reason-label">理由:</span> {{ rItem.reason }}
                           </div>
                         </div>
                       </div>
-                      <div 
-                        v-for="(rItem, idx) in item.rubric_items" 
-                        :key="idx"
-                        class="rubric-cell"
-                      >
-                        <div class="cell-header">
-                          <span class="cell-dim">{{ rItem.dimension }}</span>
-                          <span class="cell-score">{{ rItem.score }} / {{ rItem.max_score }}</span>
-                        </div>
-                        <div class="cell-comment">{{ rItem.comment }}</div>
-                        <div class="cell-reason" v-if="rItem.reason">
-                           <span class="reason-label">理由:</span> {{ rItem.reason }}
-                        </div>
+                      
+                      <div class="detail-footer" v-if="item.feedback">
+                        <div class="feedback-title">总评</div>
+                        <div class="feedback-text">{{ item.feedback }}</div>
                       </div>
-                    </div>
-                    
-                    <div class="detail-footer" v-if="item.feedback">
-                      <div class="feedback-title">总评</div>
-                      <div class="feedback-text">{{ item.feedback }}</div>
                     </div>
                   </div>
                 </div>
-              </div>
+              </TransitionGroup>
               
               <!-- Empty State -->
               <div v-if="parsedFilteredItems.length === 0" class="empty-list">

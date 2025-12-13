@@ -62,32 +62,24 @@ class ExcelExporter:
                 "学号",
                 "姓名",
                 "最终分（目标满分）",
-                "规则得分",
-                "规则满分",
+                "聚合算法",
+                "默认模型分数",
+                "追加模型1分数",
+                "追加模型2分数",
                 "状态",
                 "错误描述",
-                "总体评语",
-                "聚合算法",
-                "默认模型接口",
-                "默认模型名称",
-                "默认模型分数",
-                "默认模型评语",
-                "默认模型错误",
-                "默认模型耗时ms",
-                "追加模型1接口",
-                "追加模型1名称",
-                "追加模型1分数",
-                "追加模型1评语",
-                "追加模型1错误",
-                "追加模型1耗时ms",
-                "追加模型2接口",
-                "追加模型2名称",
-                "追加模型2分数",
-                "追加模型2评语",
-                "追加模型2错误",
-                "追加模型2耗时ms",
+                "总体评语（多模型：主模型二次生成）",
             ]
         )
+
+        sheet_model_default = workbook.create_sheet("默认模型结果")
+        sheet_model_default.append(["文件名", "学号", "姓名", "接口", "模型名称", "分数", "规则得分", "规则满分", "状态", "错误描述", "评语", "耗时ms"])
+
+        sheet_model_1 = workbook.create_sheet("追加模型1结果")
+        sheet_model_1.append(["文件名", "学号", "姓名", "接口", "模型名称", "分数", "规则得分", "规则满分", "状态", "错误描述", "评语", "耗时ms"])
+
+        sheet_model_2 = workbook.create_sheet("追加模型2结果")
+        sheet_model_2.append(["文件名", "学号", "姓名", "接口", "模型名称", "分数", "规则得分", "规则满分", "状态", "错误描述", "评语", "耗时ms"])
 
         sheet_dimensions = workbook.create_sheet("维度汇总")
         sheet_dimensions.append(
@@ -153,18 +145,41 @@ class ExcelExporter:
             cell.fill = header_fill
             cell.border = Border(left=border_side, right=border_side, top=border_side, bottom=border_side)
             cell.alignment = Alignment(horizontal="center", vertical="center")
+
+        for sheet in (sheet_model_default, sheet_model_1, sheet_model_2):
+            sheet.row_dimensions[1].height = 22
+            for col in range(1, sheet.max_column + 1):
+                cell = sheet.cell(row=1, column=col)
+                cell.font = header_style
+                cell.fill = header_fill
+                cell.border = Border(left=border_side, right=border_side, top=border_side, bottom=border_side)
+                cell.alignment = Alignment(horizontal="center", vertical="center")
+
         sheet_scores.column_dimensions["A"].width = 28
         sheet_scores.column_dimensions["B"].width = 12
         sheet_scores.column_dimensions["C"].width = 12
         sheet_scores.column_dimensions["D"].width = 16
         sheet_scores.column_dimensions["E"].width = 12
-        sheet_scores.column_dimensions["F"].width = 12
-        sheet_scores.column_dimensions["G"].width = 10
-        sheet_scores.column_dimensions["H"].width = 28
-        sheet_scores.column_dimensions["I"].width = 36
-        sheet_scores.column_dimensions["J"].width = 12
-        for col in range(11, sheet_scores.max_column + 1):
-            sheet_scores.column_dimensions[get_column_letter(col)].width = 18
+        sheet_scores.column_dimensions["F"].width = 14
+        sheet_scores.column_dimensions["G"].width = 14
+        sheet_scores.column_dimensions["H"].width = 14
+        sheet_scores.column_dimensions["I"].width = 10
+        sheet_scores.column_dimensions["J"].width = 28
+        sheet_scores.column_dimensions["K"].width = 36
+
+        for sheet in (sheet_model_default, sheet_model_1, sheet_model_2):
+            sheet.column_dimensions["A"].width = 28
+            sheet.column_dimensions["B"].width = 12
+            sheet.column_dimensions["C"].width = 12
+            sheet.column_dimensions["D"].width = 28
+            sheet.column_dimensions["E"].width = 22
+            sheet.column_dimensions["F"].width = 12
+            sheet.column_dimensions["G"].width = 12
+            sheet.column_dimensions["H"].width = 12
+            sheet.column_dimensions["I"].width = 10
+            sheet.column_dimensions["J"].width = 28
+            sheet.column_dimensions["K"].width = 36
+            sheet.column_dimensions["L"].width = 12
         sheet_dimensions.column_dimensions["A"].width = 28
         sheet_dimensions.column_dimensions["B"].width = 12
         sheet_dimensions.column_dimensions["C"].width = 12
@@ -185,6 +200,9 @@ class ExcelExporter:
         sheet_scores.freeze_panes = "A2"
         sheet_dimensions.freeze_panes = "A2"
         sheet_criteria.freeze_panes = "A2"
+        sheet_model_default.freeze_panes = "A2"
+        sheet_model_1.freeze_panes = "A2"
+        sheet_model_2.freeze_panes = "A2"
 
         for row in rows:
             file_name = row.get("file_name")
@@ -214,32 +232,38 @@ class ExcelExporter:
                     student_id,
                     student_name,
                     score,
-                    score_rubric,
-                    score_rubric_max,
+                    aggregate_strategy,
+                    (by_index.get(1) or {}).get("score"),
+                    (by_index.get(2) or {}).get("score"),
+                    (by_index.get(3) or {}).get("score"),
                     status,
                     error_message,
                     comment,
-                    aggregate_strategy,
-                    (by_index.get(1) or {}).get("api_url"),
-                    (by_index.get(1) or {}).get("model_name"),
-                    (by_index.get(1) or {}).get("score"),
-                    (by_index.get(1) or {}).get("comment"),
-                    (by_index.get(1) or {}).get("error_message"),
-                    (by_index.get(1) or {}).get("latency_ms"),
-                    (by_index.get(2) or {}).get("api_url"),
-                    (by_index.get(2) or {}).get("model_name"),
-                    (by_index.get(2) or {}).get("score"),
-                    (by_index.get(2) or {}).get("comment"),
-                    (by_index.get(2) or {}).get("error_message"),
-                    (by_index.get(2) or {}).get("latency_ms"),
-                    (by_index.get(3) or {}).get("api_url"),
-                    (by_index.get(3) or {}).get("model_name"),
-                    (by_index.get(3) or {}).get("score"),
-                    (by_index.get(3) or {}).get("comment"),
-                    (by_index.get(3) or {}).get("error_message"),
-                    (by_index.get(3) or {}).get("latency_ms"),
                 ]
             )
+
+            def append_model_row(sheet, idx: int) -> None:
+                info = by_index.get(idx) or {}
+                sheet.append(
+                    [
+                        file_name,
+                        student_id,
+                        student_name,
+                        info.get("api_url"),
+                        info.get("model_name"),
+                        info.get("score"),
+                        info.get("score_rubric"),
+                        info.get("score_rubric_max"),
+                        info.get("status"),
+                        info.get("error_message"),
+                        info.get("comment"),
+                        info.get("latency_ms"),
+                    ]
+                )
+
+            append_model_row(sheet_model_default, 1)
+            append_model_row(sheet_model_1, 2)
+            append_model_row(sheet_model_2, 3)
 
             if status != "成功":
                 continue

@@ -96,7 +96,15 @@ async def grade(
         skip_format_check=is_skip_format,
         score_target_max=score_target_max,
     )
-    logger.info("收到批改请求：文件数=%d，模板=%s，模拟模式=%s，跳过格式检查=%s", len(files), template, is_mock, is_skip_format)
+    extra_count = len(parsed_models) if parsed_models else 0
+    logger.info(
+        "收到批改请求：文件数=%d，模板=%s，模拟模式=%s，跳过格式检查=%s，追加模型数=%d",
+        len(files),
+        template,
+        is_mock,
+        is_skip_format,
+        extra_count,
+    )
     return await srv.process(files, config)
 
 

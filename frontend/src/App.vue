@@ -11,12 +11,12 @@ import { useUI } from "@/composables/useUI";
 
 // --- Icons (精选 SVG, 极简线条) ---
 const Icons = {
-  Logo: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M2 17L12 22L22 17" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M2 12L12 17L22 12" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>`,
-  Workspace: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg>`,
-  Rules: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>`,
-  Settings: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>`,
-  Moon: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>`,
-  Sun: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>`
+  Logo: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l9 4.9V17L12 22l-9-4.9V7z"/></svg>`,
+  Workspace: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><path d="M9 3v18"/><path d="M3 9h18"/></svg>`,
+  Rules: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><line x1="10" y1="9" x2="8" y2="9"/></svg>`,
+  Settings: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>`,
+  Moon: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>`,
+  Sun: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>`
 };
 
 type TabKey = "workspace" | "rules" | "settings";
@@ -26,7 +26,7 @@ const STORAGE_KEY = "ai-grader-pro-config";
 const THEME_KEY = "ai-grader-theme";
 const WORKSPACE_STATE_KEY = "ai-grader-workspace-state-v1";
 
-const { showToast } = useUI();
+const { showToast, confirm } = useUI();
 const activeTab = ref<TabKey>("workspace");
 const theme = ref<Theme>("dark");
 const statusText = ref("就绪");
@@ -328,13 +328,7 @@ function resetConfigToDefaults() {
     apiKey: "",
     modelName: "",
     multiEnabled: false,
-    models: [
-      {
-        api_url: "",
-        api_key: "",
-        model_name: "",
-      },
-    ],
+    models: [],
     template: defaultTemplate.value,
     mock: false,
     skipFormatCheck: true,
@@ -348,8 +342,18 @@ function resetPromptSettingsToDefaults() {
 }
 
 function clearAllLocalCache() {
-  if (!window.confirm("确定要清除本地缓存吗？这将清空批改结果与本地配置。")) return;
+  confirm({
+    title: "清除本地缓存",
+    content: "确定要清除批改缓存吗？这将清空当前批改结果与工作台状态（不影响系统设置与规则编辑器设置），且无法恢复。",
+    confirmText: "立即清除",
+    type: "danger",
+    onConfirm: () => {
+      executeClearCache();
+    }
+  });
+}
 
+function executeClearCache() {
   bumpGradeSession();
   loading.value = false;
   statusText.value = "就绪";
@@ -357,15 +361,10 @@ function clearAllLocalCache() {
 
   try {
     localStorage.removeItem(WORKSPACE_STATE_KEY);
-    localStorage.removeItem(STORAGE_KEY);
-    localStorage.removeItem(PROMPT_SETTINGS_KEY);
   } catch {
     /* ignore */
   }
-
-  resetConfigToDefaults();
-  resetPromptSettingsToDefaults();
-  showToast("本地缓存已清除", "success");
+  showToast("批改缓存已清除", "success");
 }
 
 onMounted(() => {
@@ -389,26 +388,26 @@ onMounted(() => {
       </div>
 
       <div class="nav-section middle">
-        <button 
-          class="nav-item" 
+        <button
+          class="nav-item"
           :class="{ active: activeTab === 'workspace' }"
           @click="activeTab = 'workspace'"
           v-tooltip="'工作台'"
         >
           <span class="icon" v-html="Icons.Workspace"></span>
         </button>
-        
-        <button 
-          class="nav-item" 
+
+        <button
+          class="nav-item"
           :class="{ active: activeTab === 'rules' }"
           @click="activeTab = 'rules'"
           v-tooltip="'规则编辑器'"
         >
           <span class="icon" v-html="Icons.Rules"></span>
         </button>
-        
-        <button 
-          class="nav-item" 
+
+        <button
+          class="nav-item"
           :class="{ active: activeTab === 'settings' }"
           @click="activeTab = 'settings'"
           v-tooltip="'系统设置'"
@@ -491,7 +490,7 @@ onMounted(() => {
 
 /* --- Navigation Rail --- */
 .nav-rail {
-  width: 80px;
+  width: 72px;
   height: 100%;
   display: flex;
   flex-direction: column;
@@ -501,7 +500,8 @@ onMounted(() => {
   border-right: 1px solid var(--border-dim);
   z-index: 50;
   flex-shrink: 0;
-  background: var(--bg-panel); /* Fallback */
+  background: var(--bg-panel);
+  backdrop-filter: blur(20px);
 }
 
 .nav-section {
@@ -517,64 +517,63 @@ onMounted(() => {
   position: relative;
   width: 40px; height: 40px;
   display: flex; align-items: center; justify-content: center;
+  margin-bottom: 8px;
 }
 .orb-core {
-  width: 12px; height: 12px; border-radius: 50%;
+  width: 10px; height: 10px; border-radius: 50%;
   background: var(--brand);
   z-index: 2;
-  box-shadow: 0 0 20px var(--brand);
+  box-shadow: 0 0 16px var(--brand);
 }
 .orb-glow {
   position: absolute; inset: 0;
   border-radius: 50%;
   border: 1px solid var(--border-light);
-  opacity: 0.5;
-  animation: breathe 4s ease-in-out infinite;
+  opacity: 0.3;
+  animation: breathe 6s ease-in-out infinite;
 }
 @keyframes breathe {
-  0%, 100% { transform: scale(0.8); opacity: 0.3; }
-  50% { transform: scale(1.1); opacity: 0.6; }
+  0%, 100% { transform: scale(0.85); opacity: 0.2; }
+  50% { transform: scale(1.1); opacity: 0.5; }
 }
 
 /* Nav Items */
 .nav-item {
   position: relative;
-  width: 48px; height: 48px;
-  border-radius: 14px;
+  width: 44px; height: 44px;
+  border-radius: 12px;
   background: transparent;
   border: 1px solid transparent;
   color: var(--txt-tertiary);
   cursor: pointer;
   display: flex; align-items: center; justify-content: center;
-  transition: background-color 0.3s cubic-bezier(0.25, 1, 0.5, 1), color 0.3s cubic-bezier(0.25, 1, 0.5, 1), border-color 0.3s cubic-bezier(0.25, 1, 0.5, 1), box-shadow 0.3s cubic-bezier(0.25, 1, 0.5, 1), transform 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+  transition: all 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 .nav-item:hover {
   background: var(--bg-hover);
-  color: var(--txt-secondary);
-  transform: scale(1.05);
+  color: var(--txt-primary);
+  transform: translateY(-1px);
 }
 .nav-item.active {
   background: var(--bg-active);
   color: var(--brand);
   border-color: var(--border-dim);
-  box-shadow: 
-    0 4px 12px -2px rgba(0,0,0,0.1), 
-    inset 0 0 0 1px rgba(255,255,255,0.05);
+  box-shadow: 0 4px 12px -2px rgba(0,0,0,0.1);
 }
 .nav-item.active::after {
   content: ''; position: absolute;
-  left: -17px; top: 12px; bottom: 12px; width: 3px;
+  left: -14px; top: 10px; bottom: 10px; width: 3px;
   background: var(--brand);
   border-radius: 0 4px 4px 0;
-  box-shadow: 0 0 10px var(--brand);
+  box-shadow: 0 0 8px var(--brand);
 }
 
 /* System Pill */
 .system-pill {
-  display: flex; flex-direction: column; align-items: center; gap: 12px;
-  padding: 12px 8px;
+  display: flex; flex-direction: column; align-items: center; gap: 16px;
+  padding: 12px 6px;
   background: var(--bg-active);
-  border-radius: 20px;
+  border-radius: 99px;
   border: 1px solid var(--border-dim);
 }
 .theme-btn {
@@ -584,26 +583,26 @@ onMounted(() => {
   color: var(--txt-secondary);
   cursor: pointer;
   display: flex; align-items: center; justify-content: center;
-  transition: background-color 0.2s, color 0.2s;
+  transition: all 0.2s;
 }
 .theme-btn:hover { background: var(--bg-hover); color: var(--txt-primary); }
 
-.divider { width: 24px; height: 1px; background: var(--border-dim); }
+.divider { width: 20px; height: 1px; background: var(--border-dim); }
 
 .status-indicator {
   width: 32px; height: 32px;
   display: flex; align-items: center; justify-content: center;
 }
 .dot {
-  width: 8px; height: 8px; border-radius: 50%;
+  width: 6px; height: 6px; border-radius: 50%;
   background: var(--success);
   box-shadow: 0 0 8px var(--success-bg);
-  transition: background-color 0.3s, box-shadow 0.3s, transform 0.3s;
+  transition: all 0.3s;
 }
 .status-indicator.is-busy .dot {
   background: var(--brand);
   box-shadow: 0 0 12px var(--brand-glow);
-  animation: pulse-dot 1s infinite;
+  animation: pulse-dot 1.5s infinite;
 }
 .status-indicator.is-error .dot {
   background: var(--error);
@@ -611,7 +610,7 @@ onMounted(() => {
 }
 @keyframes pulse-dot {
   0% { transform: scale(0.8); opacity: 0.6; }
-  50% { transform: scale(1.2); opacity: 1; }
+  50% { transform: scale(1.4); opacity: 1; }
   100% { transform: scale(0.8); opacity: 0.6; }
 }
 
@@ -633,15 +632,16 @@ onMounted(() => {
 /* Transitions */
 .page-transition-enter-active,
 .page-transition-leave-active {
-  transition: opacity 0.3s var(--ease-out), transform 0.3s var(--ease-spring);
+  transition: opacity 0.15s cubic-bezier(0.2, 0.8, 0.2, 1), transform 0.15s cubic-bezier(0.2, 0.8, 0.2, 1);
+  will-change: opacity, transform;
 }
 .page-transition-enter-from {
   opacity: 0;
-  transform: scale(0.98) translateY(10px);
+  transform: translateY(8px);
 }
 .page-transition-leave-to {
   opacity: 0;
-  transform: scale(1.02);
+  transform: translateY(-8px);
 }
 
 /* Mobile */
