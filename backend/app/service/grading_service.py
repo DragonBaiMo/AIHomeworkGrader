@@ -136,6 +136,7 @@ class GradingService:
                         status="失败",
                         error_message=str(exc),
                         raw_text_length=0,
+                        raw_response=None,
                     )
                 )
                 error_rows.append(

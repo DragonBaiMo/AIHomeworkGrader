@@ -94,7 +94,7 @@
 
 /* --- Enhanced Buttons --- */
 .action-btn {
-  display: flex; align-items: center; gap: 8px;
+  display: inline-flex; align-items: center; gap: 8px;
   padding: 10px 20px;
   border-radius: 14px;
   font-size: 14px; font-weight: 600;
@@ -108,7 +108,7 @@
 
 .action-btn.ghost { 
   background: transparent; 
-  color: var(--txt-tertiary); 
+  color: var(--txt-secondary); 
   padding: 10px; /* Square-ish for icon only */
 }
 .action-btn.ghost:hover { 
@@ -338,7 +338,13 @@
   background: linear-gradient(145deg, var(--bg-panel) 0%, rgba(var(--brand-rgb), 0.02) 100%);
 }
 
-.header-actions { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+.header-actions { 
+  display: flex; 
+  align-items: center; 
+  gap: 12px; 
+  flex-shrink: 0; 
+  justify-content: space-between;
+}
 .status-dot {
   width: 8px; height: 8px; border-radius: 50%;
   background: var(--txt-tertiary); opacity: 0.3;

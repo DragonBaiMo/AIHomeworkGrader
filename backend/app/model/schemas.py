@@ -44,7 +44,7 @@ class GradeItem(BaseModel):
     status: str
     error_message: Optional[str]
     raw_text_length: int
-    raw_response: Optional[str]
+    raw_response: Optional[str] = None
 
 
 class GradeResponse(BaseModel):
