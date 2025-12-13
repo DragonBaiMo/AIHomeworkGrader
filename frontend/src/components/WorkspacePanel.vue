@@ -102,8 +102,10 @@ const parsedFilteredItems = computed(() => {
 
 function getScoreClass(score: number | null | undefined) {
   if (score === null || score === undefined) return "";
-  if (score >= 90) return "score-high";
-  if (score >= 60) return "score-mid";
+  const max = Number(props.config?.scoreTargetMax || 0);
+  const percent = max > 0 ? (score / max) * 100 : score;
+  if (percent >= 90) return "score-high";
+  if (percent >= 60) return "score-mid";
   return "score-low";
 }
 
@@ -156,6 +158,15 @@ function handleSubmit() {
     return;
   }
   emit("submit", files.value);
+}
+
+function downloadResultExcel() {
+  const url = props.result?.download_result_url;
+  if (!url) {
+    window.alert("暂无可下载的成绩表，请先完成一次批改。");
+    return;
+  }
+  window.location.href = url;
 }
 
 function updateConfigField<T extends keyof GradeConfigPayload>(key: T, value: GradeConfigPayload[T]) {
@@ -302,7 +313,7 @@ function updateConfigField<T extends keyof GradeConfigPayload>(key: T, value: Gr
           </div>
           <div class="bento-card action-cell">
              <div class="action-stack">
-                <button class="bento-icon-btn" title="导出 CSV">
+                <button class="bento-icon-btn" title="下载 Excel" @click="downloadResultExcel">
                    <span v-html="Icons.Download"></span>
                 </button>
              </div>
@@ -362,10 +373,14 @@ function updateConfigField<T extends keyof GradeConfigPayload>(key: T, value: Gr
                   <div class="td col-id">{{ item.student_id || '-' }}</div>
                   <div class="td col-name">{{ item.student_name || '-' }}</div>
                   <div class="td col-score">
-                    <div class="score-pill" :class="getScoreClass(item.display_score)">
+                    <div
+                      class="score-pill"
+                      :class="getScoreClass(item.display_score)"
+                      :title="`目标分：${item.display_score ?? '-'} / ${config.scoreTargetMax}；规则分：${item.score_rubric ?? '-'} / ${item.score_rubric_max ?? '-'}`"
+                    >
                       <span class="status-dot" :class="getScoreClass(item.display_score) === 'score-high' ? 'ok' : getScoreClass(item.display_score) === 'score-low' ? 'err' : 'warn'"></span>
                       <span class="score-val">{{ item.display_score ?? '-' }}</span>
-                      <span class="score-max" v-if="item.display_score !== null">/100</span>
+                      <span class="score-max" v-if="item.display_score !== null">/{{ config.scoreTargetMax }}</span>
                     </div>
                   </div>
                   <div class="td col-status">

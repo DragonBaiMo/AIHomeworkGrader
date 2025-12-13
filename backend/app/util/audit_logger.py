@@ -45,6 +45,7 @@ class AuditLogger:
         user_prompt: str,
         response: dict[str, Any],
         *,
+        resolved_user_prompt: str | None = None,
         raw_response: str | None = None,
         status: str = "success",
     ) -> None:
@@ -54,6 +55,7 @@ class AuditLogger:
             "file": file_name,
             "system_prompt": system_prompt,
             "user_prompt": user_prompt,
+            "resolved_user_prompt": resolved_user_prompt,
             "response": response,
             "raw_response": raw_response,
             "status": status,

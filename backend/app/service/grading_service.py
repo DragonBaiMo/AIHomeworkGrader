@@ -85,6 +85,7 @@ class GradingService:
                 user_prompt, expected = build_user_prompt(category_cfg, score_target_max=float(config.score_target_max))
                 system_prompt = build_system_prompt(prompt_config.system_prompt)
                 auditor.save_prompts(system_prompt, user_prompt)
+                resolved_user_prompt = AIClient._build_user_content(user_prompt, content)
 
                 raw_text, parsed_result, normalized_result = await ai_client.grade(
                     content=content,
@@ -98,6 +99,7 @@ class GradingService:
                     system_prompt,
                     user_prompt,
                     normalized_result,
+                    resolved_user_prompt=resolved_user_prompt,
                     raw_response=raw_text,
                     status="success",
                 )
@@ -156,6 +158,7 @@ class GradingService:
                     system_prompt,
                     user_prompt,
                     {},
+                    resolved_user_prompt=resolved_user_prompt,
                     raw_response=raw_text,
                     status="failure",
                 )
