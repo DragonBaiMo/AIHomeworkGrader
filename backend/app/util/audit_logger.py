@@ -38,7 +38,16 @@ class AuditLogger:
         (self.prompts_dir / "system_prompt.txt").write_text(system_prompt, encoding="utf-8")
         (self.prompts_dir / "user_prompt.txt").write_text(user_prompt, encoding="utf-8")
 
-    def save_model_interaction(self, file_name: str, system_prompt: str, user_prompt: str, response: dict[str, Any]) -> None:
+    def save_model_interaction(
+        self,
+        file_name: str,
+        system_prompt: str,
+        user_prompt: str,
+        response: dict[str, Any],
+        *,
+        raw_response: str | None = None,
+        status: str = "success",
+    ) -> None:
         safe_name = file_name.replace(" ", "_")
         target = self.responses_dir / f"{safe_name}_{datetime.utcnow().strftime('%H%M%S')}.json"
         interaction = {
@@ -46,6 +55,8 @@ class AuditLogger:
             "system_prompt": system_prompt,
             "user_prompt": user_prompt,
             "response": response,
+            "raw_response": raw_response,
+            "status": status,
             "timestamp": datetime.utcnow().isoformat(),
         }
         target.write_text(json.dumps(interaction, ensure_ascii=False, indent=2), encoding="utf-8")

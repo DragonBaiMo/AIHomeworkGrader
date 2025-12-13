@@ -20,7 +20,7 @@
   align-items: center;
   justify-content: space-between;
   border-bottom: 1px solid var(--border-dim);
-  background: rgba(255, 255, 255, 0.8);
+  background: var(--bg-glass);
   backdrop-filter: blur(12px);
   z-index: 20;
 }
@@ -193,7 +193,7 @@
   flex: 1;
   padding: 40px 48px;
   overflow-y: auto;
-  background: linear-gradient(180deg, var(--bg-app) 0%, #FAFAFA 100%); /* Clean fade */
+  background: linear-gradient(180deg, var(--bg-app) 0%, var(--bg-panel) 100%);
 }
 
 .editor-stage {
@@ -328,7 +328,7 @@
 .switch-knob {
   position: absolute; top: 2px; left: 2px;
   width: 22px; height: 22px;
-  background: #fff;
+  background: var(--txt-primary);
   border-radius: 50%;
   box-shadow: 0 2px 6px rgba(0,0,0,0.15);
   transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
@@ -367,7 +367,7 @@
   color: var(--txt-primary);
   transition: all 0.2s;
 }
-.param-input:focus { border-color: var(--brand); outline: none; box-shadow: 0 0 0 3px rgba(var(--brand-rgb), 0.1); }
+.param-input:focus { border-color: var(--brand); outline: none; box-shadow: 0 0 0 2px rgba(var(--brand-rgb), 0.1); }
 
 .animate-in { animation: fadeIn 0.4s ease-out; }
 @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
@@ -407,7 +407,7 @@
   border-color: var(--border-light);
 }
 .rubric-block.collapsed { 
-  background: rgba(255,255,255,0.4); 
+  background: var(--bg-hover); 
   border-style: dashed; 
   transform: none; 
   box-shadow: none; 
@@ -542,7 +542,7 @@
   box-shadow: none;
 }
 .action-btn.glass-icon-btn:hover {
-  background: #fff;
+  background: var(--bg-hover);
   border-color: var(--border-light);
   color: var(--brand);
   box-shadow: 
@@ -566,7 +566,7 @@
   transition: all 0.2s ease-out;
 }
 .icon-btn-refresh:hover { 
-  background: #fff;
+  background: var(--bg-hover);
   border-color: var(--border-light);
   color: var(--brand); 
   box-shadow: 

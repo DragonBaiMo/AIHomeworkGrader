@@ -20,6 +20,7 @@ export interface GradeItem {
   status: string;
   error_message: string | null;
   raw_text_length: number;
+  raw_response: string | null;
 }
 
 export interface GradeResponse {

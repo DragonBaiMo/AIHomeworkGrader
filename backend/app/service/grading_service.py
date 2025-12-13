@@ -86,29 +86,37 @@ class GradingService:
                 system_prompt = build_system_prompt(prompt_config.system_prompt)
                 auditor.save_prompts(system_prompt, user_prompt)
 
-                model_result = await ai_client.grade(
+                raw_text, parsed_result, normalized_result = await ai_client.grade(
                     content=content,
                     system_prompt=system_prompt,
                     template=user_prompt,
                     expected=expected,
                     score_target_max=float(config.score_target_max),
                 )
-                auditor.save_model_interaction(file_path.name, system_prompt, user_prompt, model_result)
+                auditor.save_model_interaction(
+                    file_path.name,
+                    system_prompt,
+                    user_prompt,
+                    normalized_result,
+                    raw_response=raw_text,
+                    status="success",
+                )
 
-                detail_json = json.dumps(model_result, ensure_ascii=False)
+                detail_json = json.dumps(normalized_result, ensure_ascii=False)
                 grade_items.append(
                     GradeItem(
                         file_name=file_path.name,
                         student_id=student_id,
                         student_name=student_name,
-                        score=model_result.get("score"),
-                        score_rubric_max=model_result.get("score_rubric_max"),
-                        score_rubric=model_result.get("score_rubric"),
+                        score=normalized_result.get("score"),
+                        score_rubric_max=normalized_result.get("score_rubric_max"),
+                        score_rubric=normalized_result.get("score_rubric"),
                         detail_json=detail_json,
-                        comment=model_result.get("comment"),
+                        comment=normalized_result.get("comment"),
                         status="成功",
                         error_message=None,
                         raw_text_length=raw_length,
+                        raw_response=raw_text,
                     )
                 )
             except ValueError as exc:
@@ -139,8 +147,17 @@ class GradingService:
                 )
             except ModelError as exc:
                 logger.warning("模型评分失败：%s -> %s", file_path.name, exc)
+                raw_text = getattr(exc, "raw_response", None)
                 auditor.append_error(file_path.name, str(exc))
                 auditor.log_operation(f"文件 {file_path.name} 模型调用失败：{exc}")
+                auditor.save_model_interaction(
+                    file_path.name,
+                    system_prompt,
+                    user_prompt,
+                    {},
+                    raw_response=raw_text,
+                    status="failure",
+                )
                 grade_items.append(
                     GradeItem(
                         file_name=file_path.name,
@@ -154,6 +171,7 @@ class GradingService:
                         status="失败",
                         error_message=str(exc),
                         raw_text_length=0,
+                        raw_response=raw_text,
                     )
                 )
                 error_rows.append(
