@@ -6,9 +6,8 @@ Excel 工具模块：不依赖任何模板文件，纯代码生成“示例模�
 - 所有页统一主题：深色表头、表格条纹、边框、冻结窗格、打印设置、列宽、换行、条件格式
 - Dashboard：KPI 卡片 + 状态分布图 + 分数分布图 + 维度均分图 + 低分 Top10
 - 成绩总览：含“模型通过率(公式)” + “查看模型/查看细则(跳转)” + 条件格式（状态红绿、分数色阶）
-- 模型结果（长表）：每学生每模型一行，便于筛选/透视
-- 模型结果（宽表）：三模型横向对比
-- 维度汇总：每学生一行，维度列动态生成（来自 sections.name），默认优先示例的 5 维
+- 模型结果（宽表）：各模型横向对比（根据实际模型数动态生成列）
+- 维度汇总：每学生一行，维度列动态生成（只包含实际存在的维度）
 - 细则明细：主模型 items 扣分清单（扣分、原因说明、改进建议）
 - 批次总览：KV 表
 - 错误统计：类型/数量/占比(公式)
@@ -224,9 +223,8 @@ class ExcelExporter:
     @staticmethod
     def _cap_col(sheet, col_letter: str, max_width: float) -> None:
         dim = sheet.column_dimensions[col_letter]
-        if dim.width is None:
-            return
-        dim.width = min(float(dim.width), float(max_width))
+        cur = float(dim.width) if dim.width else max_width
+        dim.width = min(cur, float(max_width))
 
     @staticmethod
     def _min_col(sheet, col_letter: str, min_width: float) -> None:
@@ -731,8 +729,11 @@ class ExcelExporter:
 
         total_model_fail = sum(model_fail_by_idx.values())
         ws_dash["H9"].value = total_model_fail
+        # 动态生成副模型失败数统计（从 model_fail_by_idx 的 key 推断模型数）
+        model_count = max(model_fail_by_idx.keys()) if model_fail_by_idx else 1
+        sub_model_fail = sum(model_fail_by_idx.get(i, 0) for i in range(2, model_count + 1))
         ws_dash["H10"].value = (
-            f"主模型 {model_fail_by_idx.get(1, 0)} | 副模型 {model_fail_by_idx.get(2, 0) + model_fail_by_idx.get(3, 0)}"
+            f"主模型 {model_fail_by_idx.get(1, 0)} | 副模型 {sub_model_fail}"
         )
 
         # 低分 Top10
@@ -825,26 +826,6 @@ class ExcelExporter:
             freeze="A2",
         )
 
-        # 模型结果（长表）
-        model_long_headers = [
-            "学号",
-            "姓名",
-            "文件名",
-            "模型",
-            "是否采用",
-            "状态",
-            "分数",
-            "耗时(ms)",
-            "评语",
-        ]
-        ws_mlong, tbl_mlong = self._create_table_sheet(
-            wb,
-            title="模型结果（长表）",
-            headers=model_long_headers,
-            table_name="ModelLong",
-            landscape=True,
-            freeze="A2",
-        )
 
         # 模型结果（宽表）
         wide_headers = ["学号", "姓名", "文件名"]
@@ -866,10 +847,8 @@ class ExcelExporter:
             freeze="A2",
         )
 
-        # 维度汇总：维度列动态，但优先“示例常见 5 维”
-        preferred_dims = ["正确性", "鲁棒性", "效率", "可读性", "规范性"]
-        # 先扫描所有维度
-        all_dims: set[str] = set(preferred_dims)
+        # 维度汇总：维度列动态，仅保留实际存在的维度
+        all_dims: set[str] = set()
         for row in rows_list:
             results = row.get("grader_results") or []
             if not isinstance(results, list):
@@ -878,9 +857,10 @@ class ExcelExporter:
                 if not isinstance(it, dict):
                     continue
                 for sec in self._extract_sections(it):
-                    all_dims.add(str(sec.get("name") or "").strip())
-        # 排序：优先 5 维在前，其余按字典序
-        dims_ordered = preferred_dims + sorted([d for d in all_dims if d and d not in preferred_dims])
+                    dim_name = str(sec.get("name") or "").strip()
+                    if dim_name:
+                        all_dims.add(dim_name)
+        dims_ordered = sorted(all_dims)
 
         dim_headers = ["学号", "姓名", "最终分"] + dims_ordered
         ws_dim, tbl_dim = self._create_table_sheet(
@@ -925,14 +905,9 @@ class ExcelExporter:
             freeze="A2",
         )
 
-        # 3) 清掉各表的占位空行（第 2 行）以便重新写真实数据
-        def clear_placeholder(ws) -> None:
-            # 第 2 行数据占位清空（值清空即可）
-            for c in range(1, ws.max_column + 1):
-                ws.cell(2, c).value = None
-
-        for w in (ws_overview, ws_mlong, ws_mwide, ws_dim, ws_rubric, ws_sum, ws_err):
-            clear_placeholder(w)
+        # 3) 删除各表的占位空行（第 2 行）以便重新写真实数据
+        for w in (ws_overview, ws_mwide, ws_dim, ws_rubric, ws_sum, ws_err):
+            w.delete_rows(2)
 
         # 4) 批次总览写入
         if summary:
@@ -954,16 +929,15 @@ class ExcelExporter:
         for et, cnt in sorted(err_counter.items(), key=lambda kv: (-kv[1], kv[0])):
             ws_err.append([et, cnt, None])  # 占比后面补公式
 
-        # 6) 主体写入：成绩总览 / 模型长表 / 模型宽表 / 维度 / 细则
+        # 6) 主体写入：成绩总览 / 模型宽表 / 维度 / 细则
         # 记录跳转行号
-        first_row_model_long: dict[Any, int] = {}
         first_row_rubric: dict[Any, int] = {}
 
         # Dashboard 统计
         scores_for_stats: list[float] = []
         ok = 0
         fail = 0
-        model_fail_by_idx: dict[int, int] = {1: 0, 2: 0, 3: 0}
+        model_fail_by_idx: dict[int, int] = {i: 0 for i in range(1, model_count + 1)}
         dim_sum_cnt: dict[str, list[float]] = defaultdict(lambda: [0.0, 0.0])  # dim -> [sum, cnt]
         low_candidates: list[tuple[Any, Any, Any, Any]] = []
 
@@ -1065,34 +1039,16 @@ class ExcelExporter:
             wide_row += [comment]
             ws_mwide.append(wide_row)
 
-            # 模型长表：每模型一行
-            for idx in range(1, model_count + 1):
-                info = by_index.get(idx) or {}
-                if student_key not in first_row_model_long:
-                    first_row_model_long[student_key] = ws_mlong.max_row + 1
-                ws_mlong.append(
-                    [
-                        student_id,
-                        student_name,
-                        file_name,
-                        self._model_label(idx),
-                        "是" if idx == 1 else "",
-                        self._normalize_status(info.get("status")),
-                        info.get("score"),
-                        info.get("latency_ms"),
-                        self._normalize_model_comment(info),
-                    ]
-                )
 
             # 维度汇总：取“成功模型”的维度分数均值
             # 先组织各模型 sections
             sections_by_model: dict[int, list[dict[str, Any]]] = {}
-            for idx in (1, 2, 3):
+            for idx in range(1, model_count + 1):
                 sections_by_model[idx] = self._extract_sections(by_index.get(idx) or {})
 
             def mean_dim_for_student(dim_name: str) -> Optional[float]:
                 vals: list[float] = []
-                for idx in (1, 2, 3):
+                for idx in range(1, model_count + 1):
                     info = by_index.get(idx) or {}
                     if self._normalize_status(info.get("status")) != "成功":
                         continue
@@ -1145,13 +1101,8 @@ class ExcelExporter:
 
                     ws_rubric.append([student_id, student_name, dim_name, item_name, deduct, reason, suggest])
 
-            # 成绩总览：超链接（查看模型/查看细则）
-            mrow = first_row_model_long.get(student_key)
+            # 成绩总览：超链接（查看细则）
             rrow = first_row_rubric.get(student_key)
-            if mrow:
-                cell = ws_overview.cell(row=overview_row_idx, column=col_link_model)
-                cell.value = f'=HYPERLINK("#\'模型结果（长表）\'!A{mrow}","查看")'
-                cell.font = Font(color=self._theme()["link"], underline="single")
             if rrow:
                 cell = ws_overview.cell(row=overview_row_idx, column=col_link_rubric)
                 cell.value = f'=HYPERLINK("#\'细则明细\'!A{rrow}","查看")'
@@ -1174,7 +1125,6 @@ class ExcelExporter:
 
         for ws, tbl in (
             (ws_overview, tbl_overview),
-            (ws_mlong, tbl_mlong),
             (ws_mwide, tbl_mwide),
             (ws_dim, tbl_dim),
             (ws_rubric, tbl_rubric),
@@ -1195,7 +1145,6 @@ class ExcelExporter:
             self._auto_fit_columns(ws, min_width=10, max_width=44, padding=2.0)
 
         polish_table_sheet(ws_overview, landscape=False)
-        polish_table_sheet(ws_mlong, landscape=True)
         polish_table_sheet(ws_mwide, landscape=True)
         polish_table_sheet(ws_dim, landscape=True)
         polish_table_sheet(ws_rubric, landscape=True)
@@ -1207,17 +1156,13 @@ class ExcelExporter:
         # 成绩总览：文件名=E
         self._cap_col(ws_overview, "E", 30)
         self._wrap_column(ws_overview, "E", start_row=2)
-        # 总体评语/错误描述：I/J
+        # 总体评语/错误描述：I/J（限制最大宽度避免过长）
         self._min_col(ws_overview, "I", 28)
+        self._cap_col(ws_overview, "I", 40)
         self._min_col(ws_overview, "J", 28)
+        self._cap_col(ws_overview, "J", 40)
         self._wrap_column(ws_overview, "I", start_row=2)
         self._wrap_column(ws_overview, "J", start_row=2)
-
-        # 模型长表：文件名 C、评语 I
-        self._cap_col(ws_mlong, "C", 30)
-        self._wrap_column(ws_mlong, "C", start_row=2)
-        self._min_col(ws_mlong, "I", 32)
-        self._wrap_column(ws_mlong, "I", start_row=2)
 
         # 宽表：文件名 C、各评语列 + 总体评语最后一列
         self._cap_col(ws_mwide, "C", 30)
@@ -1228,6 +1173,7 @@ class ExcelExporter:
         for col_letter in ("G", "K", "O", last_col_letter):
             if col_letter <= last_col_letter:
                 self._min_col(ws_mwide, col_letter, 30)
+                self._cap_col(ws_mwide, col_letter, 40)
                 self._wrap_column(ws_mwide, col_letter, start_row=2)
 
         # 维度汇总：维度列多，限制最大宽度让表更紧凑
@@ -1237,9 +1183,11 @@ class ExcelExporter:
         self._cap_col(ws_dim, "A", 16)
         self._cap_col(ws_dim, "B", 16)
 
-        # 细则明细：原因/建议需要宽且换行
+        # 细则明细：原因/建议需要宽且换行（限制最大宽度）
         self._min_col(ws_rubric, "F", 30)
+        self._cap_col(ws_rubric, "F", 40)
         self._min_col(ws_rubric, "G", 30)
+        self._cap_col(ws_rubric, "G", 40)
         self._wrap_column(ws_rubric, "F", start_row=2)
         self._wrap_column(ws_rubric, "G", start_row=2)
         self._cap_col(ws_rubric, "D", 26)  # 细则项
@@ -1256,9 +1204,6 @@ class ExcelExporter:
         # 数字格式：分数、耗时、扣分
         # 成绩总览：最终分=B
         self._set_number_format_col(ws_overview, 2, "0.00", start_row=2)
-        # 模型长表：分数=G、耗时=H
-        self._set_number_format_col(ws_mlong, 7, "0.00", start_row=2)
-        self._set_number_format_col(ws_mlong, 8, "0", start_row=2)
         # 宽表：分数列（E/I/M）和耗时列（F/J/N）
         # 宽表结构：A 学号 B 姓名 C 文件名
         # 主模型：D 状态 E 分数 F 耗时 G 评语
@@ -1267,10 +1212,12 @@ class ExcelExporter:
         # 最后：总体评语 P（若存在）
         self._set_number_format_col(ws_mwide, 5, "0.00", start_row=2)
         self._set_number_format_col(ws_mwide, 6, "0", start_row=2)
-        self._set_number_format_col(ws_mwide, 9, "0.00", start_row=2)
-        self._set_number_format_col(ws_mwide, 10, "0", start_row=2)
-        self._set_number_format_col(ws_mwide, 13, "0.00", start_row=2)
-        self._set_number_format_col(ws_mwide, 14, "0", start_row=2)
+        if model_count >= 2:
+            self._set_number_format_col(ws_mwide, 9, "0.00", start_row=2)
+            self._set_number_format_col(ws_mwide, 10, "0", start_row=2)
+        if model_count >= 3:
+            self._set_number_format_col(ws_mwide, 13, "0.00", start_row=2)
+            self._set_number_format_col(ws_mwide, 14, "0", start_row=2)
         # 维度汇总：最终分=C 维度列 D.. 统一 0.00
         self._set_number_format_col(ws_dim, 3, "0.00", start_row=2)
         for c in range(4, ws_dim.max_column + 1):
@@ -1286,17 +1233,15 @@ class ExcelExporter:
         self._cf_static_fill(ws_overview, "J", t["comment"], start_row=2)    # 错误描述
         self._cf_static_fill(ws_overview, "B", t["score"], start_row=2)      # 最终分底色（叠加色阶也 OK）
 
-        # 模型长表：状态 F、分数 G、评语 I
-        self._cf_status(ws_mlong, "F", start_row=2)
-        self._cf_score_scale(ws_mlong, "G", start_row=2)
-        self._cf_static_fill(ws_mlong, "I", t["comment"], start_row=2)
-
-        # 宽表：三模型状态/分数/评语
-        for col in ("D", "H", "L"):
+        # 宽表：各模型状态/分数/评语（根据实际模型数动态）
+        status_cols = ["D", "H", "L"][:model_count]
+        score_cols = ["E", "I", "M"][:model_count]
+        comment_cols = ["G", "K", "O"][:model_count]
+        for col in status_cols:
             self._cf_status(ws_mwide, col, start_row=2)
-        for col in ("E", "I", "M"):
+        for col in score_cols:
             self._cf_score_scale(ws_mwide, col, start_row=2)
-        for col in ("G", "K", "O"):
+        for col in comment_cols:
             self._cf_static_fill(ws_mwide, col, t["comment"], start_row=2)
 
         # 错误统计：数量列底色

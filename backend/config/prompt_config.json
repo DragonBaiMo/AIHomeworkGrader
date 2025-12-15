@@ -6,11 +6,11 @@
       "sections": [
         {
           "key": "职业缘起与认知",
-          "max_score": 42.0,
+          "max_score": 53.0,
           "items": [
             {
               "key": "职业缘起",
-              "max_score": 20,
+              "max_score": 31,
               "description": "是否说明职业兴趣/目标的来源，如家庭环境、重大事件、过往经历、榜样力量等，叙述是否真实具体。"
             },
             {
@@ -191,6 +191,174 @@
               "key": "评分细则awsdwasd",
               "max_score": 5,
               "description": "请填写评分说明awsdawsd"
+            }
+          ]
+        }
+      ],
+      "docx_validation": {
+        "enabled": false,
+        "allowed_font_keywords": [],
+        "allowed_font_size_pts": [],
+        "font_size_tolerance": 0.5,
+        "target_line_spacing": null,
+        "line_spacing_tolerance": null
+      }
+    },
+    "cat_1765782352973": {
+      "display_name": "新分类",
+      "sections": [
+        {
+          "key": "新维度",
+          "max_score": 5.0,
+          "items": [
+            {
+              "key": "评分点1",
+              "max_score": 5,
+              "description": "（占位符：请填写评分说明）"
+            }
+          ]
+        }
+      ],
+      "docx_validation": {
+        "enabled": false,
+        "allowed_font_keywords": [],
+        "allowed_font_size_pts": [],
+        "font_size_tolerance": 0.5,
+        "target_line_spacing": null,
+        "line_spacing_tolerance": null
+      }
+    },
+    "cat_1765782353820": {
+      "display_name": "新分类",
+      "sections": [
+        {
+          "key": "新维度",
+          "max_score": 5.0,
+          "items": [
+            {
+              "key": "评分点1",
+              "max_score": 5,
+              "description": "（占位符：请填写评分说明）"
+            }
+          ]
+        }
+      ],
+      "docx_validation": {
+        "enabled": false,
+        "allowed_font_keywords": [],
+        "allowed_font_size_pts": [],
+        "font_size_tolerance": 0.5,
+        "target_line_spacing": null,
+        "line_spacing_tolerance": null
+      }
+    },
+    "cat_1765782353993": {
+      "display_name": "新分类",
+      "sections": [
+        {
+          "key": "新维度",
+          "max_score": 5.0,
+          "items": [
+            {
+              "key": "评分点1",
+              "max_score": 5,
+              "description": "（占位符：请填写评分说明）"
+            }
+          ]
+        }
+      ],
+      "docx_validation": {
+        "enabled": false,
+        "allowed_font_keywords": [],
+        "allowed_font_size_pts": [],
+        "font_size_tolerance": 0.5,
+        "target_line_spacing": null,
+        "line_spacing_tolerance": null
+      }
+    },
+    "cat_1765782354143": {
+      "display_name": "新分类",
+      "sections": [
+        {
+          "key": "新维度",
+          "max_score": 5.0,
+          "items": [
+            {
+              "key": "评分点1",
+              "max_score": 5,
+              "description": "（占位符：请填写评分说明）"
+            }
+          ]
+        }
+      ],
+      "docx_validation": {
+        "enabled": false,
+        "allowed_font_keywords": [],
+        "allowed_font_size_pts": [],
+        "font_size_tolerance": 0.5,
+        "target_line_spacing": null,
+        "line_spacing_tolerance": null
+      }
+    },
+    "cat_1765782354278": {
+      "display_name": "新分类",
+      "sections": [
+        {
+          "key": "新维度",
+          "max_score": 5.0,
+          "items": [
+            {
+              "key": "评分点1",
+              "max_score": 5,
+              "description": "（占位符：请填写评分说明）"
+            }
+          ]
+        }
+      ],
+      "docx_validation": {
+        "enabled": false,
+        "allowed_font_keywords": [],
+        "allowed_font_size_pts": [],
+        "font_size_tolerance": 0.5,
+        "target_line_spacing": null,
+        "line_spacing_tolerance": null
+      }
+    },
+    "cat_1765782354406": {
+      "display_name": "新分类",
+      "sections": [
+        {
+          "key": "新维度",
+          "max_score": 5.0,
+          "items": [
+            {
+              "key": "评分点1",
+              "max_score": 5,
+              "description": "（占位符：请填写评分说明）"
+            }
+          ]
+        }
+      ],
+      "docx_validation": {
+        "enabled": false,
+        "allowed_font_keywords": [],
+        "allowed_font_size_pts": [],
+        "font_size_tolerance": 0.5,
+        "target_line_spacing": null,
+        "line_spacing_tolerance": null
+      }
+    },
+    "cat_1765782354540": {
+      "display_name": "新分类",
+      "sections": [
+        {
+          "key": "新维度",
+          "max_score": 5.0,
+          "items": [
+            {
+              "key": "评分点1",
+              "max_score": 5,
+              "description": "（占位符：请填写评分说明）"
             }
           ]
         }

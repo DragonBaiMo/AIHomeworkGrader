@@ -358,6 +358,24 @@ function beforeUnloadHandler() {
 
 async function refreshPreview() {
   if (!editable.value || !currentKey.value) return;
+  // 预览前校验当前分类数据完整性
+  const cat = editable.value.categories[currentKey.value];
+  if (!cat) {
+    previewError.value = "当前分类不存在";
+    return;
+  }
+  for (const sec of cat.sections) {
+    if (!sec.key || !String(sec.key).trim()) {
+      previewError.value = "存在空的维度名称，请先填写后再预览";
+      return;
+    }
+    for (const item of sec.items) {
+      if (!item.key || !String(item.key).trim()) {
+        previewError.value = `维度"${sec.key}"存在空的评分点名称`;
+        return;
+      }
+    }
+  }
   previewLoading.value = true;
   previewError.value = "";
   try {
