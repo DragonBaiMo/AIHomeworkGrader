@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, computed, watch, nextTick } from "vue";
-import { fetchPromptTemplates, savePromptTemplates, fetchPromptConfig } from "@/api/client";
+import { fetchPromptTemplates, savePromptTemplates, fetchPromptConfig, savePromptConfig } from "@/api/client";
 import type { PromptConfig } from "@/api/types";
 import { useUI } from "@/shared/composables/useUI";
 
@@ -71,6 +71,19 @@ const SECTION_META: Record<string, { label: string; desc: string; hint?: string 
 const categoryKeys = computed(() => {
   if (!promptConfig.value) return [];
   return Object.keys(promptConfig.value.categories);
+});
+
+// 用于获取当前分类的目标满分
+const currentScoreTarget = computed({
+  get: () => {
+    if (!promptConfig.value || !categoryKeys.value.includes(activeSectionKey.value)) return undefined;
+    return promptConfig.value.categories[activeSectionKey.value]?.score_target_max;
+  },
+  set: (val: number | undefined) => {
+    if (promptConfig.value && categoryKeys.value.includes(activeSectionKey.value)) {
+      promptConfig.value.categories[activeSectionKey.value].score_target_max = val;
+    }
+  }
 });
 
 async function loadData() {
@@ -192,7 +205,13 @@ async function handleSave() {
   saving.value = true;
   try {
     await savePromptTemplates(sections.value);
-    showToast("提示词规范已保存", "success");
+    
+    // 如果是分类配置，同时保存 Config (针对 score_target_max 等字段)
+    if (promptConfig.value && categoryKeys.value.includes(activeSectionKey.value)) {
+       await savePromptConfig(promptConfig.value);
+    }
+
+    showToast("提示词规范与配置已保存", "success");
   } catch (e) {
     showToast((e as Error).message, "error");
   } finally {
@@ -256,25 +275,39 @@ onMounted(() => {
                 <span v-else class="badge-custom">已定制</span>
               </div>
             </button>
-           </div>
         </div>
       </div>
+    </div>
+
     </div>
 
     <div class="templates-editor">
       <div class="editor-toolbar">
         <div class="toolbar-info">
-          <h3 class="current-title">
-             {{ categoryKeys.includes(activeSectionKey) ? getCategoryLabel(activeSectionKey) : (SECTION_META[activeSectionKey]?.label || activeSectionKey) }}
-          </h3>
-          <p class="current-desc">{{ SECTION_META[activeSectionKey]?.desc || "自定义该分类的提示词模板（若为空或占位符，则自动继承通用模板）。" }}</p>
+          <div class="title-row">
+             <h3 class="current-title">
+                {{ categoryKeys.includes(activeSectionKey) ? getCategoryLabel(activeSectionKey) : (SECTION_META[activeSectionKey]?.label || activeSectionKey) }}
+             </h3>
+             <div class="inline-target" v-if="promptConfig && categoryKeys.includes(activeSectionKey)">
+                 <label>目标分</label>
+                 <input 
+                   type="number" 
+                   class="clean-input-mini" 
+                   v-model.number="currentScoreTarget" 
+                   placeholder="-"
+                   title="设置此分类的专属满分目标（如 100），留空则使用全局设置。"
+                 >
+             </div>
+           </div>
+           <p class="current-desc">{{ SECTION_META[activeSectionKey]?.desc || "自定义该分类的提示词模板（若为空或占位符，则自动继承通用模板）。" }}</p>
         </div>
+
         <div class="toolbar-actions">
            <button class="action-btn ghost" @click="handleReset" :disabled="saving || loading">
-             重置
-           </button>
+              重置
+            </button>
            <button class="action-btn primary" @click="handleSave" :disabled="saving || loading || hasValidationErrors">
-             {{ saving ? "保存中..." : "保存更改" }}
+              {{ saving ? "保存中..." : "保存更改" }}
            </button>
         </div>
       </div>
@@ -335,11 +368,22 @@ onMounted(() => {
 }
 
 .templates-sidebar {
-  width: 300px;
+  width: 280px;
+  flex-shrink: 0;
   background: var(--bg-panel);
   border-right: 1px solid var(--border-dim);
   display: flex;
   flex-direction: column;
+}
+
+@media (max-width: 900px) {
+  .templates-sidebar { width: 220px; }
+}
+@media (max-width: 768px) {
+  .templates-layout { flex-direction: column; }
+  .templates-sidebar { width: 100%; height: 200px; border-right: none; border-bottom: 1px solid var(--border-dim); }
+  .editor-toolbar { height: auto; padding: 16px; flex-wrap: wrap; gap: 12px; }
+  .toolbar-actions { width: 100%; justify-content: flex-end; margin-left: 0; }
 }
 
 .sidebar-header {
@@ -410,10 +454,27 @@ onMounted(() => {
   background: var(--bg-panel);
 }
 
-.current-title { font-size: 16px; font-weight: 700; color: var(--txt-primary); margin-bottom: 4px; }
+.current-title { font-size: 16px; font-weight: 700; color: var(--txt-primary); }
 .current-desc { font-size: 13px; color: var(--txt-tertiary); max-width: 600px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-.toolbar-actions { display: flex; gap: 12px; }
+/* Inline Target Input */
+.title-row { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
+.inline-target {
+  display: flex; align-items: center; gap: 6px;
+  background: var(--bg-hover);
+  padding: 2px 8px; border-radius: 6px;
+  border: 1px solid var(--border-dim);
+}
+.inline-target label { font-size: 11px; color: var(--txt-tertiary); }
+.clean-input-mini {
+  width: 40px; background: transparent; border: none; 
+  font-size: 12px; font-weight: 700; color: var(--brand);
+  text-align: center; font-family: 'JetBrains Mono';
+}
+.clean-input-mini:focus { outline: none; }
+.clean-input-mini::placeholder { color: var(--txt-quaternary); font-weight: 400; }
+
+.toolbar-actions { display: flex; gap: 12px; margin-left: auto; }
 
 /* Editor Content */
 .editor-content {

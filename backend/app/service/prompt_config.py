@@ -51,6 +51,7 @@ class CategoryPromptConfig:
     display_name: str
     docx_validation: "DocxValidationConfig"
     sections: List[PromptSection]
+    score_target_max: Optional[float] = None
 
 
 @dataclass(frozen=True)
@@ -160,7 +161,7 @@ def parse_prompt_config(data: Dict[str, Any]) -> PromptConfig:
 
     system_prompt = str(data.get("system_prompt") or "").strip()
     if not system_prompt:
-        raise ValueError("system_prompt 不能为空")
+        system_prompt = "你是一名专业的助教，负责依据评分标准对作业进行客观评分。"
 
     raw_categories = data.get("categories")
     if not isinstance(raw_categories, dict) or not raw_categories:
@@ -188,6 +189,7 @@ def parse_prompt_config(data: Dict[str, Any]) -> PromptConfig:
             if sec_key in section_names:
                 raise ValueError(f"categories.{cat_key}.sections 存在重复维度名称：{sec_key}")
             section_names.add(sec_key)
+            sec_max_raw = float(sec.get("max_score") or 0)
             raw_items = sec.get("items")
             if not isinstance(raw_items, list) or not raw_items:
                 raise ValueError(f"categories.{cat_key}.sections[{sec_key}].items 不能为空")
@@ -210,12 +212,23 @@ def parse_prompt_config(data: Dict[str, Any]) -> PromptConfig:
                 items.append(PromptItem(key=item_key, max_score=item_max, description=item_desc))
                 items_sum += float(item_max)
 
-            # 兼容旧配置：若维度 max_score 与细则求和不一致，自动以细则求和为准，并记录日志。
-            sec_max_raw = float(sec.get("max_score") or 0)
             if sec_max_raw > 0 and abs(sec_max_raw - items_sum) > 1e-6:
                 logger.warning("评分维度“%s”满分与细则求和不一致：维度=%s，细则求和=%s，已自动更正为细则求和。", sec_key, sec_max_raw, items_sum)
             sections.append(PromptSection(key=sec_key, max_score=items_sum, items=items))
-        categories[str(cat_key)] = CategoryPromptConfig(display_name=display_name, docx_validation=docx_validation, sections=sections)
+
+        score_target_max = None
+        if cat_value.get("score_target_max") is not None:
+             try:
+                 score_target_max = float(cat_value.get("score_target_max"))
+             except Exception:
+                 pass
+        
+        categories[str(cat_key)] = CategoryPromptConfig(
+            display_name=display_name, 
+            docx_validation=docx_validation, 
+            sections=sections,
+            score_target_max=score_target_max
+        )
 
     return PromptConfig(system_prompt=system_prompt, categories=categories)
 
@@ -247,6 +260,13 @@ def save_prompt_config(data: Dict[str, Any]) -> PromptConfig:
             if not isinstance(items, list):
                 continue
             sec["max_score"] = float(sum(float((i or {}).get("max_score") or 0) for i in items))
+        
+        # 归一化 score_target_max
+        if cat_value.get("score_target_max") is not None:
+            try:
+                cat_value["score_target_max"] = float(cat_value["score_target_max"])
+            except Exception:
+                pass
 
     PROMPT_CONFIG_PATH.write_text(json.dumps(normalized, ensure_ascii=False, indent=2), encoding="utf-8")
     existing_sections = load_prompts_md_sections()

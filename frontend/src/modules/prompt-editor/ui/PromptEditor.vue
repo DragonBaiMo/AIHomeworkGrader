@@ -463,9 +463,21 @@ async function refreshPreview() {
               </div>
               
               <div class="field-stack">
-                 <div class="field-group">
-                   <label>分类名称</label>
-                   <input type="text" v-model="currentCategory.display_name" class="clean-input-lg" placeholder="e.g. 职业规划书" />
+                 <div class="field-row-split">
+                   <div class="field-group flex-grow">
+                     <label>分类名称</label>
+                     <input type="text" v-model="currentCategory.display_name" class="clean-input-lg" placeholder="e.g. 职业规划书" />
+                   </div>
+                   <div class="field-group w-target">
+                     <label>目标分 <span class="sub-label-simple" title="留空则使用全局设置">(默认)</span></label>
+                     <input 
+                       type="number" 
+                       v-model.number="currentCategory.score_target_max" 
+                       class="clean-input-sm center-text" 
+                       placeholder="-" 
+                       title="设置此分类的专属满分目标（如 100），留空则使用全局设置"
+                     />
+                   </div>
                  </div>
               </div>
             </section>
@@ -625,3 +637,26 @@ async function refreshPreview() {
 </template>
 
 <style scoped src="../styles/prompt-editor.css"></style>
+<style scoped>
+.field-row-split { display: flex; gap: 16px; align-items: flex-end; width: 100%; }
+.flex-grow { flex: 1; min-width: 0; }
+.w-target { width: 80px; flex-shrink: 0; }
+
+.sub-label-simple { font-weight: 400; color: var(--txt-tertiary); font-size: 11px; margin-left: 2px; cursor: help; }
+
+.clean-input-sm {
+  width: 100%;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--border-dim);
+  border-radius: 0;
+  padding: 4px 0;
+  font-size: 14px;
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--txt-primary);
+  transition: all 0.2s;
+}
+.clean-input-sm.center-text { text-align: center; }
+.clean-input-sm:focus { border-color: var(--brand); outline: none; }
+.clean-input-sm::placeholder { color: var(--txt-quaternary); }
+</style>

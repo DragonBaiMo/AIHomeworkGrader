@@ -69,6 +69,7 @@ export interface PromptCategory {
   display_name: string;
   docx_validation?: DocxValidationConfig;
   sections: PromptSection[];
+  score_target_max?: number;
 }
 
 export interface PromptConfig {

@@ -237,7 +237,12 @@ class GradingService:
                             line_spacing_tolerance=category_cfg.docx_validation.line_spacing_tolerance,
                         )
 
-                    user_prompt, expected = build_user_prompt(category_cfg, score_target_max=float(config.score_target_max))
+                    # 动态获取分值：若规则配置了 target_score，则覆盖全局配置
+                    current_score_target = float(config.score_target_max)
+                    if category_cfg.score_target_max is not None and category_cfg.score_target_max > 0:
+                        current_score_target = float(category_cfg.score_target_max)
+
+                    user_prompt, expected = build_user_prompt(category_cfg, score_target_max=current_score_target)
                     system_prompt = build_system_prompt(prompt_config.system_prompt)
                     auditor.save_prompts(system_prompt, user_prompt)
                     resolved_user_prompt = AIClient._build_user_content(user_prompt, content)
@@ -253,8 +258,9 @@ class GradingService:
                             content=content,
                             system_prompt=system_prompt,
                             user_prompt=user_prompt,
+
                             expected=expected,
-                            score_target_max=float(config.score_target_max),
+                            score_target_max=current_score_target,
                         )
                         for idx, endpoint in enumerate(model_endpoints, start=1)
                     ]
@@ -319,7 +325,7 @@ class GradingService:
                             sem = await _get_model_semaphore(main_endpoint.api_url)
                             system2, user2 = self._build_overall_comment_prompts(
                                 category=str(category),
-                                score_target_max=float(config.score_target_max),
+                                score_target_max=current_score_target,
                                 aggregate_score=float(mean_score),
                                 model_results=[
                                     {
@@ -453,6 +459,27 @@ class GradingService:
             error_rows=error_rows,
         )
         exporter.export_errors(error_rows)
+        exporter.export_errors(error_rows)
+
+        # 归档逻辑
+        try:
+            from datetime import datetime
+            import shutil
+            today_str = datetime.now().strftime("%Y%m%d")
+            archive_dir = BASE_DIR / "data" / "archives" / today_str / batch_id
+            archive_dir.mkdir(parents=True, exist_ok=True)
+            
+            src_result = batch_dir / "grade_result.xlsx"
+            if src_result.exists():
+                shutil.copy2(src_result, archive_dir / "grade_result.xlsx")
+            
+            src_error = batch_dir / "error_list.xlsx"
+            if src_error.exists():
+                shutil.copy2(src_error, archive_dir / "error_list.xlsx")
+                
+            logger.info("批次归档完成：%s", archive_dir)
+        except Exception as e:
+            logger.warning("批次归档失败：%s", e)
 
         response = GradeResponse(
             batch_id=batch_id,

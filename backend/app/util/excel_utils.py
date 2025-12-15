@@ -873,7 +873,7 @@ class ExcelExporter:
         )
 
         # 细则明细（主模型 items 扣分清单）
-        rubric_headers = ["学号", "姓名", "维度", "细则项", "扣分", "原因说明", "改进建议"]
+        rubric_headers = ["学号", "姓名", "维度", "细则项", "该项总分", "得分", "扣分", "原因说明", "改进建议"]
         ws_rubric, tbl_rubric = self._create_table_sheet(
             wb,
             title="细则明细",
@@ -1099,7 +1099,7 @@ class ExcelExporter:
                         or ""
                     ).strip()
 
-                    ws_rubric.append([student_id, student_name, dim_name, item_name, deduct, reason, suggest])
+                    ws_rubric.append([student_id, student_name, dim_name, item_name, item_max, item_score, deduct, reason, suggest])
 
             # 成绩总览：超链接（查看细则）
             rrow = first_row_rubric.get(student_key)
@@ -1163,6 +1163,11 @@ class ExcelExporter:
         self._cap_col(ws_overview, "J", 40)
         self._wrap_column(ws_overview, "I", start_row=2)
         self._wrap_column(ws_overview, "J", start_row=2)
+        
+        # 批改模型结果等工作表里的行宽限制要再小一点
+        for row in ws_mwide.iter_rows(min_row=2, max_row=ws_mwide.max_row):
+            ws_mwide.row_dimensions[row[0].row].height = 60 # 限制最大行高，配合 wrap_text
+
 
         # 宽表：文件名 C、各评语列 + 总体评语最后一列
         self._cap_col(ws_mwide, "C", 30)
@@ -1184,12 +1189,15 @@ class ExcelExporter:
         self._cap_col(ws_dim, "B", 16)
 
         # 细则明细：原因/建议需要宽且换行（限制最大宽度）
-        self._min_col(ws_rubric, "F", 30)
-        self._cap_col(ws_rubric, "F", 40)
-        self._min_col(ws_rubric, "G", 30)
-        self._cap_col(ws_rubric, "G", 40)
-        self._wrap_column(ws_rubric, "F", start_row=2)
-        self._wrap_column(ws_rubric, "G", start_row=2)
+        # 细则明细：原因/建议需要宽且换行（限制最大宽度）
+        # H=原因说明，I=改进建议 (现在多了两列 Score/Total，所以偏移 +2)
+        # 该项总分=E, 得分=F, 扣分=G, 原因=H, 建议=I
+        self._min_col(ws_rubric, "H", 30)
+        self._cap_col(ws_rubric, "H", 40)
+        self._min_col(ws_rubric, "I", 30)
+        self._cap_col(ws_rubric, "I", 40)
+        self._wrap_column(ws_rubric, "H", start_row=2)
+        self._wrap_column(ws_rubric, "I", start_row=2)
         self._cap_col(ws_rubric, "D", 26)  # 细则项
         self._wrap_column(ws_rubric, "D", start_row=2)
 
@@ -1222,8 +1230,10 @@ class ExcelExporter:
         self._set_number_format_col(ws_dim, 3, "0.00", start_row=2)
         for c in range(4, ws_dim.max_column + 1):
             self._set_number_format_col(ws_dim, c, "0.00", start_row=2)
-        # 细则：扣分=E
+        # 细则：该项总分=E, 得分=F, 扣分=G
         self._set_number_format_col(ws_rubric, 5, "0.00", start_row=2)
+        self._set_number_format_col(ws_rubric, 6, "0.00", start_row=2)
+        self._set_number_format_col(ws_rubric, 7, "0.00", start_row=2)
 
         # 条件格式：成绩总览 状态列 A、最终分 B、通过率 H
         self._cf_status(ws_overview, "A", start_row=2)
