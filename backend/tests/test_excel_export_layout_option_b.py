@@ -78,33 +78,61 @@ def test_export_results_layout_option_b_sheets_and_headers(tmp_path: Path) -> No
             }
         ],
         summary={"批次ID": "batch-demo"},
-        error_rows=[{"file_name": "李四.docx", "error_type": "解析校验错误", "error_message": "解析失败"}],
+        error_rows=[
+            {
+                "file_name": "李四.docx",
+                "error_type": "解析校验错误",
+                "error_message": "解析失败：" + ("很长的错误信息用于测试自动换行与行高自适应。" * 12),
+            }
+        ],
     )
 
     path = tmp_path / "grade_result.xlsx"
     workbook = load_workbook(path)
-    assert workbook.sheetnames == ["成绩总览", "批改模型结果", "维度汇总", "细则明细", "批次总览", "错误"]
+    assert workbook.sheetnames == [
+        "Dashboard",
+        "成绩总览",
+        "模型结果（长表）",
+        "批改模型结果",
+        "维度汇总",
+        "细则明细",
+        "批次总览",
+        "错误",
+    ]
 
     # 生产环境增强：自动筛选 + Excel 表格（部分工作表）
     assert workbook["成绩总览"].auto_filter.ref is not None
     assert "TblOverview" in workbook["成绩总览"].tables
     assert workbook["批改模型结果"].auto_filter.ref is not None
-    assert "TblModels" in workbook["批改模型结果"].tables
+    assert "TblModelsWide" in workbook["批改模型结果"].tables
+    assert workbook["模型结果（长表）"].auto_filter.ref is not None
+    assert "TblModelsLong" in workbook["模型结果（长表）"].tables
     assert workbook["错误"].auto_filter.ref is not None
     assert "TblErrors" in workbook["错误"].tables
 
     overview_headers = [cell.value for cell in workbook["成绩总览"][1]]
-    assert "最终分（目标满分）" in overview_headers
-    assert "成功模型数" in overview_headers
+    assert "状态" in overview_headers
+    assert "最终分（目标满分制）" in overview_headers
+    assert "规则得分" in overview_headers
+    assert "规则满分" in overview_headers
+    assert "成功模型" in overview_headers
     assert "总体评语" in overview_headers
+    # 对齐：数据区左对齐 + 顶端对齐
+    overview_cell = workbook["成绩总览"]["E2"]
+    assert overview_cell.alignment is not None
+    assert overview_cell.alignment.horizontal == "left"
+    assert overview_cell.alignment.vertical == "top"
 
     model_headers = [cell.value for cell in workbook["批改模型结果"][1]]
     assert "主模型名称" in model_headers
+    assert "主模型状态" in model_headers
     assert "主模型评语" in model_headers
+    assert "主模型耗时(ms)" in model_headers
     assert "副模型1名称" in model_headers
+    assert "副模型1状态" in model_headers
     assert "副模型1评语" in model_headers
     assert "副模型2名称" not in model_headers
-    assert "LLM总评语（多模型：主模型二次生成）" in model_headers
+    assert "LLM总评语（主模型二次生成）" in model_headers
 
     dim_headers = [cell.value for cell in workbook["维度汇总"][1]]
     assert "汇总得分（成功模型均值）" in dim_headers
@@ -120,14 +148,11 @@ def test_export_results_layout_option_b_sheets_and_headers(tmp_path: Path) -> No
 
     error_headers = [cell.value for cell in workbook["错误"][1]]
     assert error_headers == ["文件名", "错误类型", "错误描述"]
-
-    # 维度汇总/细则明细：文件块后有空行分隔
-    dim_last = [cell.value for cell in workbook["维度汇总"][workbook["维度汇总"].max_row]]
-    assert dim_last[0] == " "
-    assert all(v is None for v in dim_last[1:])
-    crit_last = [cell.value for cell in workbook["细则明细"][workbook["细则明细"].max_row]]
-    assert crit_last[0] == " "
-    assert all(v is None for v in crit_last[1:])
+    # 长文本应启用自动换行，并设置行高
+    err_cell = workbook["错误"]["C2"]
+    assert err_cell.alignment is not None
+    assert err_cell.alignment.wrap_text is True
+    assert (workbook["错误"].row_dimensions[2].height or 0) > 16
 
     # 独立异常清单也应具备筛选与表格
     exporter.export_errors([{"file_name": "李四.docx", "error_type": "解析校验错误", "error_message": "解析失败"}])
