@@ -60,6 +60,7 @@ import math
 import statistics
 from collections import Counter, defaultdict
 from datetime import datetime
+import json
 from pathlib import Path
 from typing import Any, Iterable, Optional
 
@@ -640,6 +641,7 @@ class ExcelExporter:
         table_name: str,
         landscape: bool,
         freeze: str,
+        index: Optional[int] = None,
     ):
         if title in wb.sheetnames:
             ws = wb[title]
@@ -650,7 +652,7 @@ class ExcelExporter:
             # 清空 tables
             ws.tables.clear()
         else:
-            ws = wb.create_sheet(title)
+            ws = wb.create_sheet(title, index=index)
 
         self._set_sheet_view(ws, zoom=110, show_grid=False)
         self._set_print(ws, landscape=landscape)
@@ -792,6 +794,39 @@ class ExcelExporter:
         rows_list = list(rows)
         model_count = self._detect_model_count(rows_list)
 
+        default_target_score: Optional[float] = None
+        if summary and summary.get("目标满分") is not None:
+            try:
+                default_target_score = float(summary.get("目标满分"))
+            except Exception:
+                default_target_score = None
+
+        def _extract_row_target_score(r: dict) -> Optional[float]:
+            v = r.get("score_target_max")
+            if isinstance(v, (int, float)) and float(v) > 0:
+                return float(v)
+            if isinstance(v, str) and v.strip():
+                try:
+                    vv = float(v.strip())
+                    if vv > 0:
+                        return vv
+                except Exception:
+                    pass
+
+            detail_json = r.get("detail_json")
+            if isinstance(detail_json, str) and detail_json.strip():
+                try:
+                    obj = json.loads(detail_json)
+                    vv = obj.get("score_target_max")
+                    if vv is None:
+                        return default_target_score
+                    vv2 = float(vv)
+                    return vv2 if vv2 > 0 else default_target_score
+                except Exception:
+                    return default_target_score
+
+            return default_target_score
+
         # 1) 建 workbook 与 Dashboard/数据
         wb = Workbook()
         # openpyxl 默认会建一个 Sheet，删掉
@@ -826,6 +861,17 @@ class ExcelExporter:
             freeze="A2",
         )
 
+        # 学号汇总：按学号升序（便于点名/登记）
+        id_summary_headers = ["学号", "学生", "总成绩", "目标成绩", "总评分"]
+        ws_idsum, tbl_idsum = self._create_table_sheet(
+            wb,
+            title="按学号汇总",
+            headers=id_summary_headers,
+            table_name="StudentIdSummary",
+            landscape=False,
+            freeze="A2",
+            index=2,  # Dashboard=0, 数据=1（由 _build_dashboard 创建），汇总表放在前面更易找
+        )
 
         # 模型结果（宽表）
         wide_headers = ["学号", "姓名", "文件名"]
@@ -906,7 +952,7 @@ class ExcelExporter:
         )
 
         # 3) 删除各表的占位空行（第 2 行）以便重新写真实数据
-        for w in (ws_overview, ws_mwide, ws_dim, ws_rubric, ws_sum, ws_err):
+        for w in (ws_overview, ws_idsum, ws_mwide, ws_dim, ws_rubric, ws_sum, ws_err):
             w.delete_rows(2)
 
         # 4) 批次总览写入
@@ -949,6 +995,34 @@ class ExcelExporter:
         col_link_model = overview_headers.index("查看模型") + 1
         col_link_rubric = overview_headers.index("查看细则") + 1
         col_student_id = overview_headers.index("学号") + 1
+
+        def sort_key_by_student_id(r: dict) -> tuple[int, Any, str, str]:
+            sid = str(r.get("student_id") or "").strip()
+            sname = str(r.get("student_name") or "").strip()
+            fname = str(r.get("file_name") or "").strip()
+            if not sid:
+                return (2, "", sname, fname)
+            if sid.isdigit():
+                try:
+                    return (0, int(sid), sname, fname)
+                except Exception:
+                    return (1, sid, sname, fname)
+            return (1, sid, sname, fname)
+
+        # 学号汇总：独立写入（包含成功+失败），按学号升序
+        for r in sorted(rows_list, key=sort_key_by_student_id):
+            sid = r.get("student_id")
+            sname = r.get("student_name")
+            row_target_score = _extract_row_target_score(r)
+            ws_idsum.append(
+                [
+                    "" if sid is None else str(sid),
+                    "" if sname is None else str(sname),
+                    r.get("score"),
+                    row_target_score,
+                    "" if r.get("comment") is None else str(r.get("comment")),
+                ]
+            )
 
         for row in rows_list:
             file_name = row.get("file_name")
@@ -1125,6 +1199,7 @@ class ExcelExporter:
 
         for ws, tbl in (
             (ws_overview, tbl_overview),
+            (ws_idsum, tbl_idsum),
             (ws_mwide, tbl_mwide),
             (ws_dim, tbl_dim),
             (ws_rubric, tbl_rubric),
@@ -1145,6 +1220,7 @@ class ExcelExporter:
             self._auto_fit_columns(ws, min_width=10, max_width=44, padding=2.0)
 
         polish_table_sheet(ws_overview, landscape=False)
+        polish_table_sheet(ws_idsum, landscape=False)
         polish_table_sheet(ws_mwide, landscape=True)
         polish_table_sheet(ws_dim, landscape=True)
         polish_table_sheet(ws_rubric, landscape=True)
@@ -1206,12 +1282,24 @@ class ExcelExporter:
         self._min_col(ws_sum, "B", 56)
         self._wrap_column(ws_sum, "B", start_row=2)
 
+        # 学号汇总：评语换行与列宽
+        self._cap_col(ws_idsum, "A", 18)
+        self._cap_col(ws_idsum, "B", 16)
+        self._cap_col(ws_idsum, "C", 12)
+        self._cap_col(ws_idsum, "D", 12)
+        self._min_col(ws_idsum, "E", 34)
+        self._cap_col(ws_idsum, "E", 44)
+        self._wrap_column(ws_idsum, "E", start_row=2)
+
         # 错误统计：错误类型宽一点
         self._min_col(ws_err, "A", 22)
 
         # 数字格式：分数、耗时、扣分
         # 成绩总览：最终分=B
         self._set_number_format_col(ws_overview, 2, "0.00", start_row=2)
+        # 学号汇总：总成绩=C，目标成绩=D
+        self._set_number_format_col(ws_idsum, 3, "0.00", start_row=2)
+        self._set_number_format_col(ws_idsum, 4, "0.00", start_row=2)
         # 宽表：分数列（E/I/M）和耗时列（F/J/N）
         # 宽表结构：A 学号 B 姓名 C 文件名
         # 主模型：D 状态 E 分数 F 耗时 G 评语
@@ -1242,6 +1330,10 @@ class ExcelExporter:
         self._cf_static_fill(ws_overview, "I", t["comment"], start_row=2)    # 总体评语
         self._cf_static_fill(ws_overview, "J", t["comment"], start_row=2)    # 错误描述
         self._cf_static_fill(ws_overview, "B", t["score"], start_row=2)      # 最终分底色（叠加色阶也 OK）
+
+        # 学号汇总：总成绩色阶 + 评语淡底
+        self._cf_score_scale(ws_idsum, "C", start_row=2)
+        self._cf_static_fill(ws_idsum, "E", t["comment"], start_row=2)
 
         # 宽表：各模型状态/分数/评语（根据实际模型数动态）
         status_cols = ["D", "H", "L"][:model_count]

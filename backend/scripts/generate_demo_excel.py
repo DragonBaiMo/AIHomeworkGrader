@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -20,12 +21,6 @@ def _parse_args() -> argparse.Namespace:
         default=Path("data/_demo_batch"),
         help="输出目录（默认：backend/data/_demo_batch）",
     )
-    parser.add_argument(
-        "--template",
-        type=Path,
-        default=None,
-        help="可选：显式指定模板路径（grade_template.xlsx）。不传则按 ExcelExporter 默认路径判断是否存在模板。",
-    )
     return parser.parse_args()
 
 
@@ -34,7 +29,7 @@ def main() -> int:
     out_dir: Path = args.out_dir
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    exporter = ExcelExporter(out_dir, template_path=args.template)
+    exporter = ExcelExporter(out_dir)
 
     rows = [
         {
@@ -47,7 +42,7 @@ def main() -> int:
             "status": "成功",
             "error_message": None,
             "comment": "总体评语：结构清晰，建议补充数据来源。",
-            "detail_json": None,
+            "detail_json": json.dumps({"score_target_max": 60.0}, ensure_ascii=False),
             "aggregate_strategy": "mean",
             "grader_results": [
                 {
@@ -115,7 +110,33 @@ def main() -> int:
                     ],
                 },
             ],
-        }
+        },
+        {
+            "file_name": "王五.docx",
+            "student_id": "2025002",
+            "student_name": "王五",
+            "score": 88.0,
+            "score_rubric": 44.0,
+            "score_rubric_max": 50.0,
+            "status": "成功",
+            "error_message": None,
+            "comment": "总体评语：论证充分，建议精简重复段落。",
+            "detail_json": json.dumps({"score_target_max": 100.0}, ensure_ascii=False),
+            "aggregate_strategy": "mean",
+            "grader_results": [
+                {
+                    "model_index": 1,
+                    "api_url": "http://a",
+                    "model_name": "main",
+                    "status": "成功",
+                    "score": 88,
+                    "comment": "主模型评语：亮点明显。",
+                    "error_message": None,
+                    "latency_ms": 90,
+                    "sections": [],
+                }
+            ],
+        },
     ]
 
     error_rows = [
@@ -126,7 +147,11 @@ def main() -> int:
         }
     ]
 
-    out_path = exporter.export_results(rows, summary={"批次ID": "demo-batch", "生成时间": "now"}, error_rows=error_rows)
+    out_path = exporter.export_results(
+        rows,
+        summary={"批次ID": "demo-batch", "生成时间": "now", "目标满分": 60.0},
+        error_rows=error_rows,
+    )
     err_path = exporter.export_errors(error_rows)
     print(f"成绩表：{out_path}")
     print(f"异常清单：{err_path}")

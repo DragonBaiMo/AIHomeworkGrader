@@ -60,6 +60,7 @@ cd backend
 - 上传与导出文件位于 `backend/data/uploads`，默认会生成批次号目录。
 - 运行日志位于 `backend/data/logs/runtime.log`。
 - 默认提示词配置存放于 `backend/config/prompt_config.json`，保存后会同步生成 `prompts.md`。
+- 成绩表 `grade_result.xlsx` 会包含“按学号汇总”工作表（列：学号｜学生｜总成绩｜目标成绩｜总评分），并按学号升序排列（学号缺失的记录排在最后）；其中“目标成绩”优先取该学生记录 `detail_json.score_target_max`，缺失时回退到批次总览的“目标满分”。
 
 ## 注意事项
 
