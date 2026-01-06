@@ -861,8 +861,23 @@ class ExcelExporter:
             freeze="A2",
         )
 
+        # 维度列：从全部模型结果中收集（用于“按学号汇总/维度汇总”）
+        all_dims: set[str] = set()
+        for row in rows_list:
+            results = row.get("grader_results") or []
+            if not isinstance(results, list):
+                continue
+            for it in results:
+                if not isinstance(it, dict):
+                    continue
+                for sec in self._extract_sections(it):
+                    dim_name = str(sec.get("name") or "").strip()
+                    if dim_name:
+                        all_dims.add(dim_name)
+        dims_ordered = sorted(all_dims)
+
         # 学号汇总：按学号升序（便于点名/登记）
-        id_summary_headers = ["学号", "学生", "总成绩", "目标成绩", "总评分"]
+        id_summary_headers = ["学号", "姓名", "当前分数"] + dims_ordered + ["总体评语", "目标总分"]
         ws_idsum, tbl_idsum = self._create_table_sheet(
             wb,
             title="按学号汇总",
@@ -892,21 +907,6 @@ class ExcelExporter:
             landscape=True,
             freeze="A2",
         )
-
-        # 维度汇总：维度列动态，仅保留实际存在的维度
-        all_dims: set[str] = set()
-        for row in rows_list:
-            results = row.get("grader_results") or []
-            if not isinstance(results, list):
-                continue
-            for it in results:
-                if not isinstance(it, dict):
-                    continue
-                for sec in self._extract_sections(it):
-                    dim_name = str(sec.get("name") or "").strip()
-                    if dim_name:
-                        all_dims.add(dim_name)
-        dims_ordered = sorted(all_dims)
 
         dim_headers = ["学号", "姓名", "最终分"] + dims_ordered
         ws_dim, tbl_dim = self._create_table_sheet(
@@ -1009,18 +1009,55 @@ class ExcelExporter:
                     return (1, sid, sname, fname)
             return (1, sid, sname, fname)
 
+        def mean_dim_scores_for_row(r: dict) -> list[Optional[float]]:
+            if not dims_ordered:
+                return []
+            grader_results = r.get("grader_results") or []
+            by_index: dict[int, dict[str, Any]] = {}
+            if isinstance(grader_results, list):
+                for item in grader_results:
+                    if not isinstance(item, dict):
+                        continue
+                    try:
+                        idx = int(item.get("model_index"))
+                    except Exception:
+                        continue
+                    if 1 <= idx <= model_count:
+                        by_index[idx] = item
+            sections_by_model: dict[int, list[dict[str, Any]]] = {}
+            for idx in range(1, model_count + 1):
+                sections_by_model[idx] = self._extract_sections(by_index.get(idx) or {})
+
+            out: list[Optional[float]] = []
+            for dim_name in dims_ordered:
+                vals: list[float] = []
+                for idx in range(1, model_count + 1):
+                    info = by_index.get(idx) or {}
+                    if self._normalize_status(info.get("status")) != "成功":
+                        continue
+                    sec = next((s for s in sections_by_model[idx] if str(s.get("name") or "") == dim_name), None)
+                    if isinstance(sec, dict) and isinstance(sec.get("score"), (int, float)):
+                        vals.append(float(sec["score"]))
+                if not vals:
+                    out.append(None)
+                else:
+                    out.append(round(float(statistics.mean(vals)), 2))
+            return out
+
         # 学号汇总：独立写入（包含成功+失败），按学号升序
         for r in sorted(rows_list, key=sort_key_by_student_id):
             sid = r.get("student_id")
             sname = r.get("student_name")
             row_target_score = _extract_row_target_score(r)
+            dim_scores = mean_dim_scores_for_row(r)
             ws_idsum.append(
                 [
                     "" if sid is None else str(sid),
                     "" if sname is None else str(sname),
                     r.get("score"),
-                    row_target_score,
+                    *dim_scores,
                     "" if r.get("comment") is None else str(r.get("comment")),
+                    row_target_score,
                 ]
             )
 
@@ -1282,14 +1319,23 @@ class ExcelExporter:
         self._min_col(ws_sum, "B", 56)
         self._wrap_column(ws_sum, "B", start_row=2)
 
-        # 学号汇总：评语换行与列宽
-        self._cap_col(ws_idsum, "A", 18)
-        self._cap_col(ws_idsum, "B", 16)
-        self._cap_col(ws_idsum, "C", 12)
-        self._cap_col(ws_idsum, "D", 12)
-        self._min_col(ws_idsum, "E", 34)
-        self._cap_col(ws_idsum, "E", 44)
-        self._wrap_column(ws_idsum, "E", start_row=2)
+        # 学号汇总：评语换行与列宽（列位置根据表头动态计算）
+        id_col_id = id_summary_headers.index("学号") + 1
+        id_col_name = id_summary_headers.index("姓名") + 1
+        id_col_score = id_summary_headers.index("当前分数") + 1
+        id_col_comment = id_summary_headers.index("总体评语") + 1
+        id_col_target = id_summary_headers.index("目标总分") + 1
+        self._cap_col(ws_idsum, get_column_letter(id_col_id), 18)
+        self._cap_col(ws_idsum, get_column_letter(id_col_name), 16)
+        self._cap_col(ws_idsum, get_column_letter(id_col_score), 12)
+        self._cap_col(ws_idsum, get_column_letter(id_col_target), 12)
+        for dim_name in dims_ordered:
+            col_idx = id_summary_headers.index(dim_name) + 1
+            self._cap_col(ws_idsum, get_column_letter(col_idx), 12)
+        comment_letter = get_column_letter(id_col_comment)
+        self._min_col(ws_idsum, comment_letter, 34)
+        self._cap_col(ws_idsum, comment_letter, 44)
+        self._wrap_column(ws_idsum, comment_letter, start_row=2)
 
         # 错误统计：错误类型宽一点
         self._min_col(ws_err, "A", 22)
@@ -1297,9 +1343,12 @@ class ExcelExporter:
         # 数字格式：分数、耗时、扣分
         # 成绩总览：最终分=B
         self._set_number_format_col(ws_overview, 2, "0.00", start_row=2)
-        # 学号汇总：总成绩=C，目标成绩=D
-        self._set_number_format_col(ws_idsum, 3, "0.00", start_row=2)
-        self._set_number_format_col(ws_idsum, 4, "0.00", start_row=2)
+        # 学号汇总：当前分数/维度分/目标总分
+        self._set_number_format_col(ws_idsum, id_col_score, "0.00", start_row=2)
+        for dim_name in dims_ordered:
+            col_idx = id_summary_headers.index(dim_name) + 1
+            self._set_number_format_col(ws_idsum, col_idx, "0.00", start_row=2)
+        self._set_number_format_col(ws_idsum, id_col_target, "0.00", start_row=2)
         # 宽表：分数列（E/I/M）和耗时列（F/J/N）
         # 宽表结构：A 学号 B 姓名 C 文件名
         # 主模型：D 状态 E 分数 F 耗时 G 评语
@@ -1331,9 +1380,9 @@ class ExcelExporter:
         self._cf_static_fill(ws_overview, "J", t["comment"], start_row=2)    # 错误描述
         self._cf_static_fill(ws_overview, "B", t["score"], start_row=2)      # 最终分底色（叠加色阶也 OK）
 
-        # 学号汇总：总成绩色阶 + 评语淡底
-        self._cf_score_scale(ws_idsum, "C", start_row=2)
-        self._cf_static_fill(ws_idsum, "E", t["comment"], start_row=2)
+        # 学号汇总：当前分数色阶 + 评语淡底
+        self._cf_score_scale(ws_idsum, get_column_letter(id_col_score), start_row=2)
+        self._cf_static_fill(ws_idsum, comment_letter, t["comment"], start_row=2)
 
         # 宽表：各模型状态/分数/评语（根据实际模型数动态）
         status_cols = ["D", "H", "L"][:model_count]
