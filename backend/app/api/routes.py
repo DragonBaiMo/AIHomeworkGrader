@@ -10,7 +10,7 @@ from typing import List
 from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
-from app.model.schemas import GradeConfig, GradeResponse, ModelEndpoint
+from app.model.schemas import GradeConfig, GradeResponse, ModelEndpoint, RubricGenerateRequest
 from app.service.grading_service import GradingService
 from app.service.prompt_config import (
     PROMPT_CONFIG_PATH,
@@ -194,6 +194,41 @@ async def prompt_preview(payload: dict = Body(...)) -> JSONResponse:
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.post("/generate-rubric")
+async def generate_rubric_api(request: RubricGenerateRequest) -> JSONResponse:
+    """根据老师的文字描述，AI 生成符合项目格式的评分标准。
+
+    返回生成的评分标准 JSON，供前端预览确认后再通过 POST /api/prompt-config 保存。
+    """
+    from app.service.rubric_generator import RubricGeneratorError, generate_rubric
+
+    # 验证 API URL 格式
+    if not (request.api_url.startswith("http://") or request.api_url.startswith("https://")):
+        raise HTTPException(status_code=400, detail="api_url 必须以 http:// 或 https:// 开头")
+
+    try:
+        rubric = await generate_rubric(
+            description=request.description,
+            api_url=request.api_url,
+            api_key=request.api_key,
+            model_name=request.model_name,
+            total_score=request.total_score,
+        )
+    except RubricGeneratorError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    # 计算实际总分
+    total = sum(section.get("max_score", 0) for section in rubric.get("sections", []))
+
+    return JSONResponse(
+        {
+            "rubric": rubric,
+            "total_score": total,
+            "message": "评分标准生成成功，请确认后保存",
+        }
+    )
 
 
 router_home = APIRouter()

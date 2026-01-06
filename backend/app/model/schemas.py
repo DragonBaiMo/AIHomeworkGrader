@@ -71,3 +71,40 @@ class GradeResponse(BaseModel):
     download_result_url: str
     download_error_url: str
     items: List[GradeItem]
+
+
+class RubricGenerateRequest(BaseModel):
+    """评分标准生成请求。"""
+
+    description: str = Field(..., description="老师对评分标准的文字描述", min_length=10)
+    api_url: str = Field(..., description="大模型接口地址")
+    api_key: Optional[str] = Field(None, description="大模型访问密钥")
+    model_name: str = Field(..., description="模型名称")
+    total_score: Optional[int] = Field(None, description="指定总分（可选，未指定时从描述中提取）")
+
+    model_config = {"protected_namespaces": ()}
+
+
+class RubricItem(BaseModel):
+    """评分细则。"""
+
+    key: str = Field(..., description="细则名称")
+    max_score: float = Field(..., description="该细则满分")
+    description: str = Field(..., description="评分要求描述")
+
+
+class RubricSection(BaseModel):
+    """评分维度。"""
+
+    key: str = Field(..., description="维度名称")
+    max_score: float = Field(..., description="该维度满分")
+    items: List[RubricItem] = Field(..., description="该维度下的评分细则")
+
+
+class RubricGenerateResponse(BaseModel):
+    """评分标准生成响应。"""
+
+    category_key: str = Field(..., description="分类标识（英文下划线命名）")
+    display_name: str = Field(..., description="分类显示名称")
+    sections: List[RubricSection] = Field(..., description="评分维度列表")
+    total_score: float = Field(..., description="总分")
