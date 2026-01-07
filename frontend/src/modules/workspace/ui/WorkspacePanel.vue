@@ -88,6 +88,8 @@ const parsedItems = computed(() => {
         feedback: detail.feedback || item.comment || "",
         error_message: item.error_message || detail.error,
         display_score: typeof detail.total_score === "number" ? detail.total_score : item.score,
+        // 从 detail_json 提取实际使用的满分，回退到全局配置
+        item_score_target_max: typeof detail.score_target_max === "number" ? detail.score_target_max : null,
       };
       detailCache.set(cacheKey, parsed);
     }
@@ -107,9 +109,10 @@ const parsedFilteredItems = computed(() => {
   });
 });
 
-function getScoreClass(score: number | null | undefined) {
+function getScoreClass(score: number | null | undefined, itemMax?: number | null) {
   if (score === null || score === undefined) return "";
-  const max = Number(props.config?.scoreTargetMax || 0);
+  // 优先使用每条记录的满分，回退到全局配置
+  const max = Number(itemMax ?? props.config?.scoreTargetMax ?? 0);
   const percent = max > 0 ? (score / max) * 100 : score;
   if (percent >= 90) return "score-high";
   if (percent >= 60) return "score-mid";
@@ -424,12 +427,12 @@ function updateConfigField<T extends keyof GradeConfigPayload>(key: T, value: Gr
                     <div class="td col-score">
                       <div
                         class="score-pill"
-                        :class="getScoreClass(item.display_score)"
-                        :title="`目标分：${item.display_score ?? '-'} / ${config.scoreTargetMax}；规则分：${item.score_rubric ?? '-'} / ${item.score_rubric_max ?? '-'}`"
+                        :class="getScoreClass(item.display_score, item.item_score_target_max)"
+                        :title="`目标分：${item.display_score ?? '-'} / ${item.item_score_target_max ?? config.scoreTargetMax}；规则分：${item.score_rubric ?? '-'} / ${item.score_rubric_max ?? '-'}`"
                       >
-                        <span class="status-dot" :class="getScoreClass(item.display_score) === 'score-high' ? 'ok' : getScoreClass(item.display_score) === 'score-low' ? 'err' : 'warn'"></span>
+                        <span class="status-dot" :class="getScoreClass(item.display_score, item.item_score_target_max) === 'score-high' ? 'ok' : getScoreClass(item.display_score, item.item_score_target_max) === 'score-low' ? 'err' : 'warn'"></span>
                         <span class="score-val">{{ item.display_score ?? '-' }}</span>
-                        <span class="score-max" v-if="item.display_score !== null">/{{ config.scoreTargetMax }}</span>
+                        <span class="score-max" v-if="item.display_score !== null">/{{ item.item_score_target_max ?? config.scoreTargetMax }}</span>
                       </div>
                     </div>
                     <div class="td col-status">
@@ -457,7 +460,7 @@ function updateConfigField<T extends keyof GradeConfigPayload>(key: T, value: Gr
                           多模型批改明细
                         </div>
                         <div class="model-result-sub">
-                          聚合算法：{{ item.aggregate_strategy || 'mean' }} &nbsp;|&nbsp; 汇总分：{{ item.display_score ?? '-' }} / {{ config.scoreTargetMax }} &nbsp;|&nbsp; 总体评语：多模型下主模型二次生成
+                          聚合算法：{{ item.aggregate_strategy || 'mean' }} &nbsp;|&nbsp; 汇总分：{{ item.display_score ?? '-' }} / {{ item.item_score_target_max ?? config.scoreTargetMax }} &nbsp;|&nbsp; 总体评语：多模型下主模型二次生成
                         </div>
                           <div class="model-result-table">
                             <div class="model-result-row header">
