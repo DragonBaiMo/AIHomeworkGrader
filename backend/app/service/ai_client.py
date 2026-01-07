@@ -256,8 +256,11 @@ class AIClient:
 
         解析策略：
         1) 若存在 Markdown 代码块（```...```），优先提取第一个看起来像 JSON 的代码块内容；
-        2) 否则回退为截取第一个“{”到最后一个“}”之间的内容。
+        2) 否则回退为截取第一个"{"到最后一个"}"之间的内容；
+        3) 若解析失败，尝试修复常见的 JSON 格式问题。
         """
+        import re
+
         if not text:
             raise ValueError("模型输出为空")
 
@@ -276,7 +279,13 @@ class AIClient:
                 break
             block = text[lang_end + 1 : fence_end].strip()
             if block.startswith("{") and block.endswith("}"):
-                return json.loads(block)
+                try:
+                    return json.loads(block)
+                except json.JSONDecodeError:
+                    # 代码块内 JSON 解析失败，尝试修复
+                    repaired = AIClient._repair_json_string(block)
+                    if repaired is not None:
+                        return repaired
             start_idx = fence_end + len(fence)
 
         start = text.find("{")
@@ -287,10 +296,74 @@ class AIClient:
         try:
             return json.loads(snippet)
         except json.JSONDecodeError:
-            repaired = self._attempt_repair_json(snippet)
+            # 尝试多种修复策略
+            repaired = AIClient._repair_json_string(snippet)
+            if repaired is not None:
+                return repaired
+            repaired = AIClient._attempt_repair_json(snippet)
             if repaired:
                 return repaired
             raise
+
+    @staticmethod
+    def _repair_json_string(snippet: str) -> dict[str, Any] | None:
+        """尝试修复常见的 JSON 格式错误。"""
+        import re
+
+        # 策略 1：移除尾部逗号（如 [1, 2, 3,] 或 {"a": 1,}）
+        fixed = re.sub(r',(\s*[}\]])', r'\1', snippet)
+        try:
+            return json.loads(fixed)
+        except json.JSONDecodeError:
+            pass
+
+        # 策略 2：移除注释（// 或 /* */）
+        fixed = re.sub(r'//.*?(?=\n|$)', '', snippet)
+        fixed = re.sub(r'/\*.*?\*/', '', fixed, flags=re.DOTALL)
+        try:
+            return json.loads(fixed)
+        except json.JSONDecodeError:
+            pass
+
+        # 策略 3：修复未转义的换行符（在字符串中）
+        # 匹配字符串内的真实换行并替换为 \n
+        def fix_newlines_in_strings(s: str) -> str:
+            result = []
+            in_string = False
+            escape = False
+            for i, c in enumerate(s):
+                if escape:
+                    result.append(c)
+                    escape = False
+                    continue
+                if c == '\\':
+                    result.append(c)
+                    escape = True
+                    continue
+                if c == '"':
+                    in_string = not in_string
+                    result.append(c)
+                    continue
+                if in_string and c == '\n':
+                    result.append('\\n')
+                    continue
+                result.append(c)
+            return ''.join(result)
+
+        fixed = fix_newlines_in_strings(snippet)
+        try:
+            return json.loads(fixed)
+        except json.JSONDecodeError:
+            pass
+
+        # 策略 4：修复缺失的引号（键名没有引号）
+        fixed = re.sub(r'(?<=[{,]\s*)(\w+)(?=\s*:)', r'"\1"', snippet)
+        try:
+            return json.loads(fixed)
+        except json.JSONDecodeError:
+            pass
+
+        return None
 
     @staticmethod
     def _attempt_repair_json(snippet: str) -> dict[str, Any] | None:
