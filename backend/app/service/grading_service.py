@@ -37,7 +37,7 @@ from app.util.file_utils import (
     validate_supported_file,
 )
 from app.util.logger import logger
-from config.settings import UPLOAD_DIR
+from config.settings import BASE_DIR, UPLOAD_DIR
 
 
 _FILE_SEMAPHORE = asyncio.Semaphore(5)
@@ -465,18 +465,20 @@ class GradingService:
         try:
             from datetime import datetime
             import shutil
+            from config.settings import BASE_DIR
+
             today_str = datetime.now().strftime("%Y%m%d")
             archive_dir = BASE_DIR / "data" / "archives" / today_str / batch_id
             archive_dir.mkdir(parents=True, exist_ok=True)
-            
+
             src_result = batch_dir / "grade_result.xlsx"
             if src_result.exists():
                 shutil.copy2(src_result, archive_dir / "grade_result.xlsx")
-            
+
             src_error = batch_dir / "error_list.xlsx"
             if src_error.exists():
                 shutil.copy2(src_error, archive_dir / "error_list.xlsx")
-                
+
             logger.info("批次归档完成：%s", archive_dir)
         except Exception as e:
             logger.warning("批次归档失败：%s", e)

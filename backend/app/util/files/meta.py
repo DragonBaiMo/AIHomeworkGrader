@@ -186,6 +186,7 @@ def parse_filename_meta(filename: str) -> FileMeta:
     # 2) 统一分隔符切分（支持 + _ - | . @ 空格）
     tokens = [clean_token(t) for t in re.split(SEPARATOR_REGEX, stem_norm) if clean_token(t)]
 
+    # 命名规范提示：班级+姓名+学号+作业名称（示例：25计算机科学与技术1班+张三三+202502210111+职业规划书）
     student_id = guess_student_id(stem_norm)
     class_name: Optional[str] = None
     student_name: Optional[str] = None

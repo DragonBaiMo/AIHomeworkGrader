@@ -1,4 +1,4 @@
-import type { GradeConfigPayload, GradeResponse, PromptConfig } from "./types";
+import type { GradeConfigPayload, GradeResponse, PromptConfig, RubricGenerateRequest, RubricGenerateResponse } from "./types";
 
 const API_PREFIX = "/api";
 
@@ -117,4 +117,21 @@ export async function savePromptTemplates(sections: Record<string, string>): Pro
     const message = data?.detail || "保存提示词模板失败";
     throw new Error(message);
   }
+}
+
+export async function generateRubric(request: RubricGenerateRequest): Promise<RubricGenerateResponse> {
+  const resp = await fetch(`${API_PREFIX}/generate-rubric`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(request),
+  });
+
+  if (!resp.ok) {
+    const data = await parseJsonSafe(resp);
+    const message = data?.detail || "生成评分标准失败";
+    throw new Error(message);
+  }
+  return resp.json();
 }

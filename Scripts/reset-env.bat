@@ -75,6 +75,11 @@ if errorlevel 1 (
 echo [安装] 正在安装后端依赖...
 .venv\Scripts\pip.exe install -r "%REQ_FILE%"
 if errorlevel 1 goto :deps_failed
+
+REM 代理/网络受限环境提示
+IF NOT EXIST "%VENV_SITE%\socksio" (
+    echo [提示] 如需 SOCKS 代理支持，请执行: .venv\Scripts\pip.exe install httpx[socks]
+)
 echo [完成] 项目依赖安装成功
 
 echo.

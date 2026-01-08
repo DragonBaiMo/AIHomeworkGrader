@@ -86,3 +86,17 @@ export interface PromptSettings {
   autoSaveEnabled: boolean;
   autoSaveIntervalSeconds: number;
 }
+
+export interface RubricGenerateRequest {
+  description: string;
+  api_url: string;
+  api_key?: string;
+  model_name: string;
+  total_score?: number;
+}
+
+export interface RubricGenerateResponse {
+  rubric: PromptCategory & { category_key: string };
+  total_score: number;
+  message: string;
+}

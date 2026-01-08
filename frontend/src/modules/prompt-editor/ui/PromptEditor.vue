@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, toRaw, watch } fro
 import type { DocxValidationConfig, PromptCategory, PromptConfig, PromptSection } from "@/api/types";
 import { useUI } from "@/shared/composables/useUI";
 import { fetchPromptPreview } from "@/api/client";
+import AiRubricAssistant from "@/shared/ui/ai-assistant/AiRubricAssistant.vue";
 
 const props = defineProps<{
   config: PromptConfig | null;
@@ -389,6 +390,21 @@ async function refreshPreview() {
     previewLoading.value = false;
   }
 }
+
+function handleAiApply(payload: { categoryKey: string; category: PromptCategory }) {
+  if (!editable.value || !currentCategory.value) return;
+  // 将 AI 生成的评分标准应用到当前分类
+  currentCategory.value.display_name = payload.category.display_name;
+  currentCategory.value.sections = payload.category.sections;
+  if (payload.category.docx_validation) {
+    currentCategory.value.docx_validation = payload.category.docx_validation;
+  }
+  // 重新计算各维度的 max_score
+  currentCategory.value.sections.forEach((sec) => {
+    sec.max_score = getSectionTotal(sec);
+  });
+  showToast("AI 生成的评分标准已应用", "success");
+}
 </script>
 
 <template>
@@ -633,6 +649,14 @@ async function refreshPreview() {
         </div>
       </aside>
     </div>
+
+    <!-- AI 评分标准生成助手 -->
+    <AiRubricAssistant
+      v-if="editable && currentCategory"
+      :current-category-key="currentKey"
+      :current-category-name="currentCategory.display_name"
+      @apply="handleAiApply"
+    />
   </div>
 </template>
 
