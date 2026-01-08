@@ -1,0 +1,1707 @@
+diff --git a/backend/app/api/routes.py b/backend/app/api/routes.py
+index 7c624ae..e07c3f4 100644
+--- a/backend/app/api/routes.py
++++ b/backend/app/api/routes.py
+@@ -4,26 +4,28 @@ FastAPI 路由定义，提供健康检查、批改与下载接口。
+ from __future__ import annotations
+ 
+ import json
+ from pathlib import Path
+ from typing import List
+ 
+ from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, UploadFile
+ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
++from sse_starlette.sse import EventSourceResponse, ServerSentEvent
+ 
+ from app.model.schemas import GradeConfig, GradeResponse, ModelEndpoint, RubricGenerateRequest
+ from app.service.grading_service import GradingService
+ from app.service.prompt_config import (
+     PROMPT_CONFIG_PATH,
+     load_prompt_config,
+     load_prompts_md_sections,
+     save_prompt_config,
+     save_prompts_md_sections,
+ )
++from app.util.file_utils import generate_batch_id, save_upload_files
+ from app.util.logger import logger
+ from config.settings import STATIC_DIR
+ 
+ router = APIRouter(prefix="/api")
+ service = GradingService()
+ 
+ 
+ def get_service() -> GradingService:
+@@ -61,33 +63,33 @@ async def grade(
+     if not is_mock:
+         if not models and not api_url:
+             raise HTTPException(status_code=400, detail="未填写模型接口地址")
+ 
+     parsed_models: list[ModelEndpoint] | None = None
+     if models:
+         try:
+             raw = json.loads(models)
+-        except Exception:  # noqa: BLE001
++        except json.JSONDecodeError:
+             raise HTTPException(status_code=400, detail="多模型配置 JSON 解析失败，请检查格式。")
+         if not isinstance(raw, list) or not raw:
+             raise HTTPException(status_code=400, detail="多模型配置必须为非空数组。")
+         if len(raw) > 2:
+             raw = raw[:2]
+         parsed_models = []
+         for idx, item in enumerate(raw, start=1):
+             if not isinstance(item, dict):
+                 raise HTTPException(status_code=400, detail=f"多模型配置第 {idx} 项必须为对象。")
+             try:
+                 endpoint = ModelEndpoint(
+                     api_url=str(item.get("api_url") or "").strip(),
+                     api_key=(str(item.get("api_key")).strip() if item.get("api_key") is not None else None),
+                     model_name=str(item.get("model_name") or "").strip(),
+                 )
+-            except Exception:  # noqa: BLE001
++            except (ValueError, TypeError, KeyError):
+                 raise HTTPException(status_code=400, detail=f"多模型配置第 {idx} 项字段不合法，请检查 api_url/model_name。")
+             if not is_mock:
+                 if not endpoint.api_url:
+                     raise HTTPException(status_code=400, detail=f"多模型配置第 {idx} 项未填写 api_url。")
+                 if not (endpoint.api_url.startswith("http://") or endpoint.api_url.startswith("https://")):
+                     raise HTTPException(status_code=400, detail=f"多模型配置第 {idx} 项 api_url 必须以 http:// 或 https:// 开头。")
+             if not endpoint.model_name:
+                 raise HTTPException(status_code=400, detail=f"多模型配置第 {idx} 项未填写 model_name。")
+@@ -109,16 +111,157 @@ async def grade(
+         template,
+         is_mock,
+         is_skip_format,
+         extra_count,
+     )
+     return await srv.process(files, config)
+ 
+ 
++@router.post("/grade-stream")
++async def grade_stream(
++    files: List[UploadFile] = File(..., description="待批改的作业文件"),
++    api_url: str | None = Form(default=None, description="模型接口地址"),
++    api_key: str | None = Form(default=None, description="API 密钥"),
++    model_name: str | None = Form(default=None, description="模型名称"),
++    models: str | None = Form(default=None, description="追加模型配置 JSON（数组，每项包含 api_url/api_key/model_name，最多 2 个）"),
++    template: str = Form(default="auto", description="作业模板类型（auto 为自动识别，否则传分类 key）"),
++    mock: str = Form(default="false", description="是否使用模拟模式"),
++    skip_format_check: str = Form(default="false", description="是否跳过格式检查"),
++    score_target_max: float = Form(default=60.0, description="目标满分（用于将评分规则总分按比例换算）"),
++    srv: GradingService = Depends(get_service),
++) -> EventSourceResponse:
++    """流式批改接口，每完成一个文件立即通过 SSE 推送结果。
++
++    SSE 事件类型:
++    - init: 批次初始化，包含 batch_id 和 total_files
++    - progress: 进度更新，包含 current, total, percent
++    - item: 单个文件批改完成，包含完整的 GradeItem
++    - complete: 全部处理完毕，包含汇总统计和下载链接
++    - error: 致命错误
++    """
++    if not files:
++        async def error_generator():
++            yield {"event": "error", "data": json.dumps({"message": "请至少上传一个作业文件", "recoverable": False}, ensure_ascii=False)}
++        return EventSourceResponse(error_generator())
++
++    is_mock = mock.lower() == "true"
++    is_skip_format = skip_format_check.lower() == "true"
++
++    if score_target_max <= 0:
++        async def error_generator():
++            yield {"event": "error", "data": json.dumps({"message": "目标满分必须大于 0", "recoverable": False}, ensure_ascii=False)}
++        return EventSourceResponse(error_generator())
++
++    if not is_mock:
++        if not models and not api_url:
++            async def error_generator():
++                yield {"event": "error", "data": json.dumps({"message": "未填写模型接口地址", "recoverable": False}, ensure_ascii=False)}
++            return EventSourceResponse(error_generator())
++
++    parsed_models: list[ModelEndpoint] | None = None
++    if models:
++        try:
++            raw = json.loads(models)
++        except json.JSONDecodeError:
++            async def error_generator():
++                yield {"event": "error", "data": json.dumps({"message": "多模型配置 JSON 解析失败，请检查格式。", "recoverable": False}, ensure_ascii=False)}
++            return EventSourceResponse(error_generator())
++
++        if not isinstance(raw, list) or not raw:
++            async def error_generator():
++                yield {"event": "error", "data": json.dumps({"message": "多模型配置必须为非空数组。", "recoverable": False}, ensure_ascii=False)}
++            return EventSourceResponse(error_generator())
++
++        if len(raw) > 2:
++            raw = raw[:2]
++        parsed_models = []
++        for idx, item in enumerate(raw, start=1):
++            if not isinstance(item, dict):
++                async def error_generator():
++                    yield {"event": "error", "data": json.dumps({"message": f"多模型配置第 {idx} 项必须为对象。", "recoverable": False}, ensure_ascii=False)}
++                return EventSourceResponse(error_generator())
++            try:
++                endpoint = ModelEndpoint(
++                    api_url=str(item.get("api_url") or "").strip(),
++                    api_key=(str(item.get("api_key")).strip() if item.get("api_key") is not None else None),
++                    model_name=str(item.get("model_name") or "").strip(),
++                )
++            except (ValueError, TypeError, KeyError):
++                async def error_generator():
++                    yield {"event": "error", "data": json.dumps({"message": f"多模型配置第 {idx} 项字段不合法。", "recoverable": False}, ensure_ascii=False)}
++                return EventSourceResponse(error_generator())
++            if not is_mock:
++                if not endpoint.api_url:
++                    async def error_generator():
++                        yield {"event": "error", "data": json.dumps({"message": f"多模型配置第 {idx} 项未填写 api_url。", "recoverable": False}, ensure_ascii=False)}
++                    return EventSourceResponse(error_generator())
++                if not (endpoint.api_url.startswith("http://") or endpoint.api_url.startswith("https://")):
++                    async def error_generator():
++                        yield {"event": "error", "data": json.dumps({"message": f"多模型配置第 {idx} 项 api_url 必须以 http:// 或 https:// 开头。", "recoverable": False}, ensure_ascii=False)}
++                    return EventSourceResponse(error_generator())
++            if not endpoint.model_name:
++                async def error_generator():
++                    yield {"event": "error", "data": json.dumps({"message": f"多模型配置第 {idx} 项未填写 model_name。", "recoverable": False}, ensure_ascii=False)}
++                return EventSourceResponse(error_generator())
++            parsed_models.append(endpoint)
++
++    config = GradeConfig(
++        api_url=api_url,
++        api_key=api_key,
++        model_name=model_name,
++        models=parsed_models,
++        template=template,
++        mock=is_mock,
++        skip_format_check=is_skip_format,
++        score_target_max=score_target_max,
++    )
++
++    extra_count = len(parsed_models) if parsed_models else 0
++    logger.info(
++        "收到流式批改请求：文件数=%d，模板=%s，模拟模式=%s，跳过格式检查=%s，追加模型数=%d",
++        len(files),
++        template,
++        is_mock,
++        is_skip_format,
++        extra_count,
++    )
++
++    # 关键：在返回 SSE 响应之前先保存文件，避免 UploadFile 在生成器执行时已关闭
++    batch_id = generate_batch_id()
++    try:
++        batch_dir, stored_paths = save_upload_files(batch_id, files)
++    except Exception as exc:
++        async def error_generator():
++            yield {"event": "error", "data": json.dumps({"message": f"文件保存失败：{exc}", "recoverable": False}, ensure_ascii=False)}
++        return EventSourceResponse(error_generator())
++
++    if not stored_paths:
++        async def error_generator():
++            yield {"event": "error", "data": json.dumps({"message": "没有有效的文件可处理", "recoverable": False}, ensure_ascii=False)}
++        return EventSourceResponse(error_generator())
++
++    async def event_generator():
++        # 先发送 init 事件
++        yield ServerSentEvent(
++            event="init",
++            data=json.dumps({"batch_id": batch_id, "total_files": len(stored_paths)}, ensure_ascii=False),
++        )
++        # 使用已保存的文件路径进行流式处理
++        async for event in srv.process_stream_from_saved(batch_id, batch_dir, stored_paths, config):
++            event_type = event.get("event", "message")
++            event_data = event.get("data", {})
++            yield ServerSentEvent(
++                event=event_type,
++                data=json.dumps(event_data, ensure_ascii=False),
++            )
++
++    return EventSourceResponse(event_generator(), ping=0)
++
++
+ @router.get("/download/{file_type}/{batch_id}")
+ async def download(file_type: str, batch_id: str, srv: GradingService = Depends(get_service)) -> FileResponse:
+     """提供成绩表或异常清单的下载。"""
+     try:
+         path: Path = srv.get_download_path(batch_id, file_type)
+     except FileNotFoundError:
+         raise HTTPException(status_code=404, detail="未找到对应批次文件")
+     if not path.exists():
+diff --git a/backend/app/model/schemas.py b/backend/app/model/schemas.py
+index 6b1351c..3efbe35 100644
+--- a/backend/app/model/schemas.py
++++ b/backend/app/model/schemas.py
+@@ -1,17 +1,21 @@
+ """
+ Pydantic 数据模型定义，描述接口输入输出结构。
+ """
+ from __future__ import annotations
+ 
++import warnings
+ from typing import List, Optional
+ 
+ from pydantic import BaseModel, Field
+ 
++# 全局禁用 Pydantic 的 protected_namespaces 警告
++warnings.filterwarnings("ignore", message="Field.*has conflict with protected namespace")
++
+ 
+ class ModelEndpoint(BaseModel):
+     """单个模型端点配置（支持多模型批改）。"""
+ 
+     api_url: str = Field(..., description="大模型接口地址")
+     api_key: Optional[str] = Field(None, description="大模型访问密钥")
+     model_name: str = Field(..., description="模型名称")
+ 
+diff --git a/backend/app/service/grading_service.py b/backend/app/service/grading_service.py
+index a34c7e8..7485711 100644
+--- a/backend/app/service/grading_service.py
++++ b/backend/app/service/grading_service.py
+@@ -3,17 +3,17 @@
+ """
+ from __future__ import annotations
+ 
+ import asyncio
+ import statistics
+ import json
+ import time
+ from pathlib import Path
+-from typing import Iterable, List, Optional
++from typing import Any, AsyncGenerator, Iterable, List, Optional
+ from urllib.parse import urlsplit
+ 
+ from fastapi import UploadFile
+ 
+ from app.model.schemas import GradeConfig, GradeItem, GradeResponse, ModelEndpoint
+ from app.service.ai_client import AIClient, ModelError
+ from app.service.prompt_builder import build_system_prompt, build_user_prompt
+ from app.service.prompt_config import (
+@@ -89,16 +89,259 @@ class GradingService:
+         best_gap = abs(float(best.get("score") or 0.0) - float(target_score))
+         for item in success_results[1:]:
+             gap = abs(float(item.get("score") or 0.0) - float(target_score))
+             if gap < best_gap:
+                 best = item
+                 best_gap = gap
+         return best
+ 
++    @staticmethod
++    def _archive_batch(batch_id: str, batch_dir: Path) -> None:
++        """归档批次结果到 archives 目录。"""
++        try:
++            from datetime import datetime
++            import shutil
++
++            today_str = datetime.now().strftime("%Y%m%d")
++            archive_dir = BASE_DIR / "data" / "archives" / today_str / batch_id
++            archive_dir.mkdir(parents=True, exist_ok=True)
++
++            src_result = batch_dir / "grade_result.xlsx"
++            if src_result.exists():
++                shutil.copy2(src_result, archive_dir / "grade_result.xlsx")
++
++            src_error = batch_dir / "error_list.xlsx"
++            if src_error.exists():
++                shutil.copy2(src_error, archive_dir / "error_list.xlsx")
++
++            logger.info("批次归档完成：%s", archive_dir)
++        except Exception as e:
++            logger.warning("批次归档失败：%s", e)
++
++    async def _grade_single_file(
++        self,
++        file_path: Path,
++        config: GradeConfig,
++        model_endpoints: list[ModelEndpoint],
++        prompt_config: Any,
++        auditor: AuditLogger,
++    ) -> tuple[GradeItem, Optional[dict]]:
++        """处理单个文件的核心批改逻辑（共享方法）。
++
++        Returns:
++            tuple[GradeItem, Optional[dict]]: (批改结果, 错误行信息或None)
++        """
++        async with _FILE_SEMAPHORE:
++            system_prompt: str = ""
++            user_prompt: str = ""
++            resolved_user_prompt: str | None = None
++            try:
++                validate_supported_file(file_path)
++                meta: FileMeta = parse_filename_meta(file_path.name)
++                category: AssignmentCategory = detect_assignment_category(file_path.name, config.template)
++                rule = get_rule(category)
++                content = parse_file_text(file_path, min_length=rule.min_length)
++                student_id = meta.student_id
++                student_name = meta.student_name
++                raw_length = len(content)
++                auditor.log_operation(f"开始处理文件 {file_path.name}，识别为 {category}")
++
++                if prompt_config is None or category not in prompt_config.categories:
++                    raise ValueError("未找到对应分类的评分规则配置，请先在「评分规则」页面配置并保存。")
++                category_cfg = prompt_config.categories[category]
++                if file_path.suffix.lower() == ".docx" and not config.skip_format_check and category_cfg.docx_validation.enabled:
++                    validate_docx_format(
++                        file_path,
++                        allowed_font_keywords=category_cfg.docx_validation.allowed_font_keywords,
++                        allowed_font_size_pts=category_cfg.docx_validation.allowed_font_size_pts,
++                        font_size_tolerance=category_cfg.docx_validation.font_size_tolerance,
++                        target_line_spacing=category_cfg.docx_validation.target_line_spacing,
++                        line_spacing_tolerance=category_cfg.docx_validation.line_spacing_tolerance,
++                    )
++
++                current_score_target = float(config.score_target_max)
++                if category_cfg.score_target_max is not None and category_cfg.score_target_max > 0:
++                    current_score_target = float(category_cfg.score_target_max)
++
++                user_prompt, expected = build_user_prompt(category_cfg, score_target_max=current_score_target)
++                system_prompt = build_system_prompt(prompt_config.system_prompt)
++                auditor.save_prompts(system_prompt, user_prompt)
++                resolved_user_prompt = AIClient._build_user_content(user_prompt, content)
++
++                if not model_endpoints:
++                    raise ValueError("未配置任何可用模型，请在设置中填写模型端点与名称。")
++
++                tasks = [
++                    self._grade_one_model(
++                        model_index=idx,
++                        endpoint=endpoint,
++                        mock=config.mock,
++                        content=content,
++                        system_prompt=system_prompt,
++                        user_prompt=user_prompt,
++                        expected=expected,
++                        score_target_max=current_score_target,
++                    )
++                    for idx, endpoint in enumerate(model_endpoints, start=1)
++                ]
++                model_results = await asyncio.gather(*tasks)
++
++                success = [r for r in model_results if r.get("status") == "success" and r.get("score") is not None]
++                if not success:
++                    errors = [str(r.get("error_message") or "未知错误") for r in model_results]
++                    message = "；".join(errors[:3])
++                    auditor.append_error(file_path.name, message)
++                    auditor.log_operation(f"文件 {file_path.name} 所有模型均失败：{message}")
++                    for r in model_results:
++                        auditor.save_model_interaction(
++                            file_path.name, system_prompt, user_prompt, {},
++                            model_id=f"m{r.get('model_index')}",
++                            resolved_user_prompt=resolved_user_prompt,
++                            raw_response=r.get("raw_response"),
++                            status="failure",
++                        )
++                    item = GradeItem(
++                        file_name=file_path.name,
++                        student_id=student_id,
++                        student_name=student_name,
++                        score=None,
++                        score_rubric_max=None,
++                        score_rubric=None,
++                        detail_json=None,
++                        comment=None,
++                        status="失败",
++                        error_message=f"所有模型评分失败：{message}",
++                        raw_text_length=raw_length,
++                        raw_response=None,
++                        aggregate_strategy="mean",
++                        grader_results=[
++                            {
++                                "model_index": r.get("model_index"),
++                                "api_url": r.get("api_url"),
++                                "model_name": r.get("model_name"),
++                                "status": "失败",
++                                "score": r.get("score"),
++                                "comment": r.get("comment"),
++                                "error_message": r.get("error_message"),
++                                "latency_ms": r.get("latency_ms"),
++                            }
++                            for r in model_results
++                        ],
++                    )
++                    return item, {"file_name": file_path.name, "error_type": "模型调用错误", "error_message": item.error_message}
++
++                scores_success = [float(r.get("score")) for r in success]
++                mean_score = float(statistics.mean(scores_success))
++                picked = self._pick_representative_result(success, mean_score)
++                normalized_result = (picked or {}).get("normalized_result") or {}
++
++                overall_comment = normalized_result.get("comment")
++                if config.models and not config.mock:
++                    try:
++                        main_endpoint = model_endpoints[0]
++                        sem = await _get_model_semaphore(main_endpoint.api_url)
++                        system2, user2 = self._build_overall_comment_prompts(
++                            category=str(category),
++                            score_target_max=current_score_target,
++                            aggregate_score=float(mean_score),
++                            model_results=[
++                                {
++                                    "model_index": r.get("model_index"),
++                                    "model_name": r.get("model_name"),
++                                    "status": "成功" if r.get("status") == "success" else "失败",
++                                    "score": r.get("score"),
++                                    "comment": r.get("comment"),
++                                    "error_message": r.get("error_message"),
++                                }
++                                for r in model_results
++                            ],
++                        )
++                        async with sem:
++                            client2 = AIClient(main_endpoint.api_url, main_endpoint.api_key, main_endpoint.model_name, mock=False)
++                            raw2, parsed2 = await client2.chat_json(system_prompt=system2, user_prompt=user2, required_fields=("comment",))
++                        auditor.save_model_interaction(
++                            file_path.name, system2, user2, {"overall_review": parsed2},
++                            model_id="overall_comment",
++                            resolved_user_prompt=None,
++                            raw_response=raw2,
++                            status="success",
++                        )
++                        overall_comment = str(parsed2.get("comment") or "").strip() or overall_comment
++                        normalized_result["overall_review"] = parsed2
++                    except Exception as exc:
++                        logger.warning("总体评语生成失败（多模型模式）：%s -> %s", file_path.name, exc)
++                        auditor.append_error(file_path.name, f"总体评语生成失败：{exc}")
++
++                detail_json = json.dumps(normalized_result, ensure_ascii=False)
++
++                for r in model_results:
++                    auditor.save_model_interaction(
++                        file_path.name, system_prompt, user_prompt,
++                        (r.get("normalized_result") or {}) if r.get("status") == "success" else {},
++                        model_id=f"m{r.get('model_index')}",
++                        resolved_user_prompt=resolved_user_prompt,
++                        raw_response=r.get("raw_response"),
++                        status="success" if r.get("status") == "success" else "failure",
++                    )
++
++                item = GradeItem(
++                    file_name=file_path.name,
++                    student_id=student_id,
++                    student_name=student_name,
++                    score=round(mean_score, 2),
++                    score_rubric_max=normalized_result.get("score_rubric_max"),
++                    score_rubric=normalized_result.get("score_rubric"),
++                    detail_json=detail_json,
++                    comment=overall_comment,
++                    status="成功",
++                    error_message=None,
++                    raw_text_length=raw_length,
++                    raw_response=None,
++                    aggregate_strategy="mean",
++                    grader_results=[
++                        {
++                            "model_index": r.get("model_index"),
++                            "api_url": r.get("api_url"),
++                            "model_name": r.get("model_name"),
++                            "status": "成功" if r.get("status") == "success" else "失败",
++                            "score": r.get("score"),
++                            "comment": r.get("comment"),
++                            "error_message": r.get("error_message"),
++                            "latency_ms": r.get("latency_ms"),
++                            "sections": (r.get("normalized_result") or {}).get("sections") if r.get("status") == "success" else None,
++                        }
++                        for r in model_results
++                    ],
++                )
++                return item, None
++            except ValueError as exc:
++                logger.warning("文件处理异常：%s -> %s", file_path.name, exc)
++                auditor.append_error(file_path.name, str(exc))
++                auditor.log_operation(f"文件 {file_path.name} 处理失败：{exc}")
++                return (
++                    GradeItem(
++                        file_name=file_path.name,
++                        student_id=None,
++                        student_name=None,
++                        score=None,
++                        score_rubric_max=None,
++                        score_rubric=None,
++                        detail_json=None,
++                        comment=None,
++                        status="失败",
++                        error_message=str(exc),
++                        raw_text_length=0,
++                        raw_response=None,
++                        aggregate_strategy="mean",
++                        grader_results=None,
++                    ),
++                    {"file_name": file_path.name, "error_type": "解析校验错误", "error_message": str(exc)},
++                )
++
+     async def _grade_one_model(
+         self,
+         *,
+         model_index: int,
+         endpoint: ModelEndpoint,
+         mock: bool,
+         content: str,
+         system_prompt: str,
+@@ -203,235 +446,21 @@ class GradingService:
+                 "files": [path.name for path in stored_paths],
+             }
+         )
+         auditor.log_operation("批次初始化完成，准备开始处理文件")
+ 
+         grade_items: List[GradeItem] = []
+         error_rows: List[dict] = []
+ 
+-        async def process_one(file_path: Path) -> tuple[GradeItem, Optional[dict]]:
+-            async with _FILE_SEMAPHORE:
+-                system_prompt: str = ""
+-                user_prompt: str = ""
+-                resolved_user_prompt: str | None = None
+-                try:
+-                    validate_supported_file(file_path)
+-                    meta: FileMeta = parse_filename_meta(file_path.name)
+-                    category: AssignmentCategory = detect_assignment_category(file_path.name, config.template)
+-                    rule = get_rule(category)
+-                    content = parse_file_text(file_path, min_length=rule.min_length)
+-                    student_id = meta.student_id
+-                    student_name = meta.student_name
+-                    raw_length = len(content)
+-                    auditor.log_operation(f"开始处理文件 {file_path.name}，识别为 {category}")
+-
+-                    if prompt_config is None or category not in prompt_config.categories:
+-                        raise ValueError("未找到对应分类的评分规则配置，请先在“评分规则”页面配置并保存。")
+-                    category_cfg = prompt_config.categories[category]
+-                    if file_path.suffix.lower() == ".docx" and not config.skip_format_check and category_cfg.docx_validation.enabled:
+-                        validate_docx_format(
+-                            file_path,
+-                            allowed_font_keywords=category_cfg.docx_validation.allowed_font_keywords,
+-                            allowed_font_size_pts=category_cfg.docx_validation.allowed_font_size_pts,
+-                            font_size_tolerance=category_cfg.docx_validation.font_size_tolerance,
+-                            target_line_spacing=category_cfg.docx_validation.target_line_spacing,
+-                            line_spacing_tolerance=category_cfg.docx_validation.line_spacing_tolerance,
+-                        )
+-
+-                    # 动态获取分值：若规则配置了 target_score，则覆盖全局配置
+-                    current_score_target = float(config.score_target_max)
+-                    if category_cfg.score_target_max is not None and category_cfg.score_target_max > 0:
+-                        current_score_target = float(category_cfg.score_target_max)
+-
+-                    user_prompt, expected = build_user_prompt(category_cfg, score_target_max=current_score_target)
+-                    system_prompt = build_system_prompt(prompt_config.system_prompt)
+-                    auditor.save_prompts(system_prompt, user_prompt)
+-                    resolved_user_prompt = AIClient._build_user_content(user_prompt, content)
+-
+-                    if not model_endpoints:
+-                        raise ValueError("未配置任何可用模型，请在设置中填写模型端点与名称。")
+-
+-                    tasks = [
+-                        self._grade_one_model(
+-                            model_index=idx,
+-                            endpoint=endpoint,
+-                            mock=config.mock,
+-                            content=content,
+-                            system_prompt=system_prompt,
+-                            user_prompt=user_prompt,
+-
+-                            expected=expected,
+-                            score_target_max=current_score_target,
+-                        )
+-                        for idx, endpoint in enumerate(model_endpoints, start=1)
+-                    ]
+-                    model_results = await asyncio.gather(*tasks)
+-
+-                    success = [r for r in model_results if r.get("status") == "success" and r.get("score") is not None]
+-                    if not success:
+-                        errors = [str(r.get("error_message") or "未知错误") for r in model_results]
+-                        message = "；".join(errors[:3])
+-                        auditor.append_error(file_path.name, message)
+-                        auditor.log_operation(f"文件 {file_path.name} 所有模型均失败：{message}")
+-                        for r in model_results:
+-                            auditor.save_model_interaction(
+-                                file_path.name,
+-                                system_prompt,
+-                                user_prompt,
+-                                {},
+-                                model_id=f"m{r.get('model_index')}",
+-                                resolved_user_prompt=resolved_user_prompt,
+-                                raw_response=r.get("raw_response"),
+-                                status="failure",
+-                            )
+-                        item = GradeItem(
+-                            file_name=file_path.name,
+-                            student_id=student_id,
+-                            student_name=student_name,
+-                            score=None,
+-                            score_rubric_max=None,
+-                            score_rubric=None,
+-                            detail_json=None,
+-                            comment=None,
+-                            status="失败",
+-                            error_message=f"所有模型评分失败：{message}",
+-                            raw_text_length=raw_length,
+-                            raw_response=None,
+-                            aggregate_strategy="mean",
+-                            grader_results=[
+-                                {
+-                                    "model_index": r.get("model_index"),
+-                                    "api_url": r.get("api_url"),
+-                                    "model_name": r.get("model_name"),
+-                                    "status": "失败",
+-                                    "score": r.get("score"),
+-                                    "comment": r.get("comment"),
+-                                    "error_message": r.get("error_message"),
+-                                    "latency_ms": r.get("latency_ms"),
+-                                }
+-                                for r in model_results
+-                            ],
+-                        )
+-                        return item, {"file_name": file_path.name, "error_type": "模型调用错误", "error_message": item.error_message}
+-
+-                    scores_success = [float(r.get("score")) for r in success]
+-                    mean_score = float(statistics.mean(scores_success))
+-                    picked = self._pick_representative_result(success, mean_score)
+-                    normalized_result = (picked or {}).get("normalized_result") or {}
+-
+-                    overall_comment = normalized_result.get("comment")
+-                    if config.models and not config.mock:
+-                        try:
+-                            main_endpoint = model_endpoints[0]
+-                            sem = await _get_model_semaphore(main_endpoint.api_url)
+-                            system2, user2 = self._build_overall_comment_prompts(
+-                                category=str(category),
+-                                score_target_max=current_score_target,
+-                                aggregate_score=float(mean_score),
+-                                model_results=[
+-                                    {
+-                                        "model_index": r.get("model_index"),
+-                                        "model_name": r.get("model_name"),
+-                                        "status": "成功" if r.get("status") == "success" else "失败",
+-                                        "score": r.get("score"),
+-                                        "comment": r.get("comment"),
+-                                        "error_message": r.get("error_message"),
+-                                    }
+-                                    for r in model_results
+-                                ],
+-                            )
+-                            async with sem:
+-                                client2 = AIClient(main_endpoint.api_url, main_endpoint.api_key, main_endpoint.model_name, mock=False)
+-                                raw2, parsed2 = await client2.chat_json(system_prompt=system2, user_prompt=user2, required_fields=("comment",))
+-                            auditor.save_model_interaction(
+-                                file_path.name,
+-                                system2,
+-                                user2,
+-                                {"overall_review": parsed2},
+-                                model_id="overall_comment",
+-                                resolved_user_prompt=None,
+-                                raw_response=raw2,
+-                                status="success",
+-                            )
+-                            overall_comment = str(parsed2.get("comment") or "").strip() or overall_comment
+-                            normalized_result["overall_review"] = parsed2
+-                        except Exception as exc:  # noqa: BLE001
+-                            logger.warning("总体评语生成失败（多模型模式）：%s -> %s", file_path.name, exc)
+-                            auditor.append_error(file_path.name, f"总体评语生成失败：{exc}")
+-
+-                    detail_json = json.dumps(normalized_result, ensure_ascii=False)
+-
+-                    for r in model_results:
+-                        auditor.save_model_interaction(
+-                            file_path.name,
+-                            system_prompt,
+-                            user_prompt,
+-                            (r.get("normalized_result") or {}) if r.get("status") == "success" else {},
+-                            model_id=f"m{r.get('model_index')}",
+-                            resolved_user_prompt=resolved_user_prompt,
+-                            raw_response=r.get("raw_response"),
+-                            status="success" if r.get("status") == "success" else "failure",
+-                        )
+-
+-                    item = GradeItem(
+-                        file_name=file_path.name,
+-                        student_id=student_id,
+-                        student_name=student_name,
+-                        score=round(mean_score, 2),
+-                        score_rubric_max=normalized_result.get("score_rubric_max"),
+-                        score_rubric=normalized_result.get("score_rubric"),
+-                        detail_json=detail_json,
+-                        comment=overall_comment,
+-                        status="成功",
+-                        error_message=None,
+-                        raw_text_length=raw_length,
+-                        raw_response=None,
+-                        aggregate_strategy="mean",
+-                        grader_results=[
+-                            {
+-                                "model_index": r.get("model_index"),
+-                                "api_url": r.get("api_url"),
+-                                "model_name": r.get("model_name"),
+-                                "status": "成功" if r.get("status") == "success" else "失败",
+-                                "score": r.get("score"),
+-                                "comment": r.get("comment"),
+-                                "error_message": r.get("error_message"),
+-                                "latency_ms": r.get("latency_ms"),
+-                                "sections": (r.get("normalized_result") or {}).get("sections") if r.get("status") == "success" else None,
+-                            }
+-                            for r in model_results
+-                        ],
+-                    )
+-                    return item, None
+-                except ValueError as exc:
+-                    logger.warning("文件处理异常：%s -> %s", file_path.name, exc)
+-                    auditor.append_error(file_path.name, str(exc))
+-                    auditor.log_operation(f"文件 {file_path.name} 处理失败：{exc}")
+-                    return (
+-                        GradeItem(
+-                            file_name=file_path.name,
+-                            student_id=None,
+-                            student_name=None,
+-                            score=None,
+-                            score_rubric_max=None,
+-                            score_rubric=None,
+-                            detail_json=None,
+-                            comment=None,
+-                            status="失败",
+-                            error_message=str(exc),
+-                            raw_text_length=0,
+-                            raw_response=None,
+-                            aggregate_strategy="mean",
+-                            grader_results=None,
+-                        ),
+-                        {"file_name": file_path.name, "error_type": "解析校验错误", "error_message": str(exc)},
+-                    )
+-
+-        results = await asyncio.gather(*[process_one(p) for p in stored_paths])
++        # 使用共享的 _grade_single_file 方法
++        results = await asyncio.gather(*[
++            self._grade_single_file(p, config, model_endpoints, prompt_config, auditor)
++            for p in stored_paths
++        ])
+         for item, error_row in results:
+             grade_items.append(item)
+             if error_row:
+                 error_rows.append(error_row)
+ 
+         scores = [item.score for item in grade_items if item.score is not None]
+         average_score = round(statistics.mean(scores), 2) if scores else None
+         score_rubric_values = [item.score_rubric for item in grade_items if item.score_rubric is not None]
+@@ -454,39 +483,19 @@ class GradingService:
+                 "成功数": len(scores),
+                 "失败数": len(grade_items) - len(scores),
+                 "平均分（目标满分制）": average_score if average_score is not None else "",
+                 "平均规则分": average_score_rubric if average_score_rubric is not None else "",
+             },
+             error_rows=error_rows,
+         )
+         exporter.export_errors(error_rows)
+-        exporter.export_errors(error_rows)
+-
+-        # 归档逻辑
+-        try:
+-            from datetime import datetime
+-            import shutil
+-            from config.settings import BASE_DIR
+-
+-            today_str = datetime.now().strftime("%Y%m%d")
+-            archive_dir = BASE_DIR / "data" / "archives" / today_str / batch_id
+-            archive_dir.mkdir(parents=True, exist_ok=True)
+-
+-            src_result = batch_dir / "grade_result.xlsx"
+-            if src_result.exists():
+-                shutil.copy2(src_result, archive_dir / "grade_result.xlsx")
+-
+-            src_error = batch_dir / "error_list.xlsx"
+-            if src_error.exists():
+-                shutil.copy2(src_error, archive_dir / "error_list.xlsx")
+ 
+-            logger.info("批次归档完成：%s", archive_dir)
+-        except Exception as e:
+-            logger.warning("批次归档失败：%s", e)
++        # 使用共享的归档方法
++        self._archive_batch(batch_id, batch_dir)
+ 
+         response = GradeResponse(
+             batch_id=batch_id,
+             total_files=len(grade_items),
+             success_count=len(scores),
+             error_count=len(grade_items) - len(scores),
+             average_score=average_score,
+             download_result_url=f"/api/download/result/{batch_id}",
+@@ -506,8 +515,186 @@ class GradingService:
+     def get_download_path(self, batch_id: str, file_type: str) -> Path:
+         """根据批次与文件类型返回下载路径。"""
+         batch_dir = self.upload_root / batch_id
+         if file_type == "result":
+             return batch_dir / "grade_result.xlsx"
+         if file_type == "error":
+             return batch_dir / "error_list.xlsx"
+         raise FileNotFoundError("不支持的文件类型")
++
++    async def process_stream(
++        self, files: Iterable[UploadFile], config: GradeConfig
++    ) -> AsyncGenerator[dict[str, Any], None]:
++        """流式处理批改，逐个 yield SSE 事件。
++
++        事件类型:
++        - init: 批次初始化完成，包含 batch_id 和 total_files
++        - progress: 进度更新，包含 current, total, percent
++        - item: 单个文件批改完成，包含 GradeItem
++        - complete: 全部处理完毕，包含汇总统计
++        - error: 致命错误
++        """
++        batch_id = generate_batch_id()
++        try:
++            batch_dir, stored_paths = save_upload_files(batch_id, files)
++        except Exception as exc:
++            yield {"event": "error", "data": {"message": f"文件保存失败：{exc}", "recoverable": False}}
++            return
++
++        async for event in self._process_stream_from_paths(batch_id, batch_dir, stored_paths, config):
++            yield event
++
++    async def process_stream_from_saved(
++        self,
++        batch_id: str,
++        batch_dir: Path,
++        stored_paths: List[Path],
++        config: GradeConfig,
++    ) -> AsyncGenerator[dict[str, Any], None]:
++        """从已保存的文件路径进行流式处理（用于 SSE 场景，文件已提前保存）。"""
++        async for event in self._process_stream_from_paths(batch_id, batch_dir, stored_paths, config):
++            yield event
++
++    async def _process_stream_from_paths(
++        self,
++        batch_id: str,
++        batch_dir: Path,
++        stored_paths: List[Path],
++        config: GradeConfig,
++    ) -> AsyncGenerator[dict[str, Any], None]:
++        """内部流式处理实现，基于已保存的文件路径。"""
++        total_files = len(stored_paths)
++        if total_files == 0:
++            yield {"event": "error", "data": {"message": "没有有效的文件可处理", "recoverable": False}}
++            return
++
++        exporter = ExcelExporter(batch_dir)
++        prompt_config = load_prompt_config()
++        auditor = AuditLogger(batch_id)
++        model_endpoints = self._resolve_model_endpoints(config)
++
++        logger.info(
++            "流式批改启动：batch_id=%s，文件数=%d，模型数=%d",
++            batch_id, total_files, len(model_endpoints)
++        )
++
++        auditor.save_meta({
++            "template": config.template,
++            "score_target_max": float(config.score_target_max),
++            "mock_mode": config.mock,
++            "models": [{"api_url": m.api_url, "model_name": m.model_name} for m in model_endpoints],
++            "files": [path.name for path in stored_paths],
++        })
++        auditor.log_operation("流式批次初始化完成，准备开始处理文件")
++
++        # 注意：init 事件已在路由层发送，此处不再重复发送
++
++        grade_items: List[GradeItem] = []
++        error_rows: List[dict] = []
++
++        # 使用共享的 _grade_single_file 方法创建任务
++        tasks_map = {
++            asyncio.create_task(self._grade_single_file(p, config, model_endpoints, prompt_config, auditor)): p
++            for p in stored_paths
++        }
++        completed_count = 0
++
++        try:
++            for coro in asyncio.as_completed(tasks_map.keys()):
++                try:
++                    item, error_row = await coro
++                    completed_count += 1
++                    grade_items.append(item)
++                    if error_row:
++                        error_rows.append(error_row)
++
++                    # 发送单项结果事件
++                    yield {
++                        "event": "item",
++                        "data": {
++                            "item": item.model_dump(),
++                            "index": completed_count,
++                        }
++                    }
++
++                    # 发送进度事件
++                    yield {
++                        "event": "progress",
++                        "data": {
++                            "current": completed_count,
++                            "total": total_files,
++                            "percent": round(completed_count * 100 / total_files, 1),
++                        }
++                    }
++
++                except Exception as exc:
++                    completed_count += 1
++                    logger.error("流式处理单文件异常：%s", exc)
++                    yield {
++                        "event": "progress",
++                        "data": {
++                            "current": completed_count,
++                            "total": total_files,
++                            "percent": round(completed_count * 100 / total_files, 1),
++                        }
++                    }
++        finally:
++            # 客户端断开或发生异常时，取消剩余未完成的任务
++            for task in tasks_map.keys():
++                if not task.done():
++                    task.cancel()
++                    try:
++                        await task
++                    except asyncio.CancelledError:
++                        pass
++
++        # 计算统计信息
++        scores = [item.score for item in grade_items if item.score is not None]
++        average_score = round(statistics.mean(scores), 2) if scores else None
++        score_rubric_values = [item.score_rubric for item in grade_items if item.score_rubric is not None]
++        average_score_rubric = round(statistics.mean(score_rubric_values), 2) if score_rubric_values else None
++        rubric_max_values = sorted({float(item.score_rubric_max) for item in grade_items if item.score_rubric_max is not None})
++
++        auditor.log_operation("流式批次处理完毕，准备导出 Excel")
++
++        # 导出 Excel
++        exporter.export_results(
++            [item.model_dump() for item in grade_items],
++            summary={
++                "批次ID": batch_id,
++                "目标满分": float(config.score_target_max),
++                "规则满分（可能多值）": " / ".join(str(v) for v in rubric_max_values) if rubric_max_values else "",
++                "模型列表": "；".join([f"{m.model_name}@{m.api_url}" for m in model_endpoints]) if model_endpoints else "",
++                "聚合算法": "平均分（成功模型）",
++                "多模型总体评语": "启用多模型时，会用主模型二次生成总体评语（JSON）",
++                "并发限制": "文件=5；模型=2/接口；单次超时=300秒；重试=3次",
++                "文件总数": len(grade_items),
++                "成功数": len(scores),
++                "失败数": len(grade_items) - len(scores),
++                "平均分（目标满分制）": average_score if average_score is not None else "",
++                "平均规则分": average_score_rubric if average_score_rubric is not None else "",
++            },
++            error_rows=error_rows,
++        )
++        exporter.export_errors(error_rows)
++
++        # 使用共享的归档方法
++        self._archive_batch(batch_id, batch_dir)
++
++        # 发送完成事件
++        yield {
++            "event": "complete",
++            "data": {
++                "batch_id": batch_id,
++                "total_files": len(grade_items),
++                "success_count": len(scores),
++                "error_count": len(grade_items) - len(scores),
++                "average_score": average_score,
++                "download_result_url": f"/api/download/result/{batch_id}",
++                "download_error_url": f"/api/download/error/{batch_id}",
++            }
++        }
++
++        logger.info(
++            "流式批次完成：%s，总计%d，成功%d，异常%d，平均分%s",
++            batch_id, len(grade_items), len(scores), len(grade_items) - len(scores), average_score
++        )
+diff --git a/backend/app/static/index.html b/backend/app/static/index.html
+index dce3b07..90299a4 100644
+--- a/backend/app/static/index.html
++++ b/backend/app/static/index.html
+@@ -9,15 +9,15 @@
+     <!-- Brand Favicon (Blue Orb) -->
+     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%233b82f6' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Ccircle cx='12' cy='12' r='3' fill='%233b82f6'/%3E%3C/svg%3E" />
+     
+     <title>AI Grader Pro</title>
+ 
+     <link rel="preconnect" href="https://fonts.googleapis.com">
+     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+-    <script type="module" crossorigin src="/static/assets/index-ZKgVyvaG.js"></script>
+-    <link rel="stylesheet" crossorigin href="/static/assets/index-DrBWyFqE.css">
++    <script type="module" crossorigin src="/static/assets/index-CrZwjUz5.js"></script>
++    <link rel="stylesheet" crossorigin href="/static/assets/index-BYgLLyrH.css">
+   </head>
+   <body>
+     <div id="app"></div>
+   </body>
+ </html>
+diff --git a/backend/requirements.txt b/backend/requirements.txt
+index ffcb619..a27dec7 100644
+--- a/backend/requirements.txt
++++ b/backend/requirements.txt
+@@ -1,8 +1,9 @@
+ fastapi==0.111.0
+ uvicorn==0.30.1
+ python-docx==1.1.2
+ openpyxl==3.1.2
+ httpx==0.27.0
+ pydantic==2.7.4
+ pytest==8.3.2
+ socksio==1.0.0
++sse-starlette==2.1.0
+diff --git a/frontend/src/App.vue b/frontend/src/App.vue
+index 3b99fed..a99d003 100644
+--- a/frontend/src/App.vue
++++ b/frontend/src/App.vue
+@@ -14,20 +14,22 @@ const {
+   loading,
+   result,
+   promptConfig,
+   promptLoading,
+   promptSaving,
+   promptError,
+   templateOptions,
+   promptSettings,
++  streamProgress,
+   toggleTheme,
+   updateConfig,
+   updatePromptSettings,
+   handleGrade,
++  cancelGrade,
+   clearWorkspaceState,
+   clearAllLocalCache,
+   loadPromptConfig,
+   handleSavePrompt,
+   config,
+ } = useAppController();
+ </script>
+ 
+@@ -94,24 +96,26 @@ const {
+       </div>
+     </nav>
+ 
+     <!-- Main Viewport -->
+     <main class="main-viewport">
+       <div class="viewport-content custom-scrollbar">
+         <Transition name="page-transition" mode="out-in">
+           <KeepAlive :include="['WorkspacePanel', 'PromptEditor', 'PromptTemplates', 'SettingsPanel']" :max="4">
+-            <WorkspacePanel 
++            <WorkspacePanel
+               v-if="activeTab === 'workspace'"
+               :config="config"
+               :templates="templateOptions"
+               :loading="loading"
+               :result="result"
+               :status-text="statusText"
++              :stream-progress="streamProgress"
+               @submit="handleGrade"
++              @cancel="cancelGrade"
+               @clear-result="clearWorkspaceState"
+               @clear-all-cache="clearAllLocalCache"
+               @request-settings="activeTab = 'settings'"
+               @update:config="updateConfig"
+             />
+             <SettingsPanel 
+               v-else-if="activeTab === 'settings'"
+               :config="config"
+diff --git a/frontend/src/api/client.ts b/frontend/src/api/client.ts
+index 801a408..83c87be 100644
+--- a/frontend/src/api/client.ts
++++ b/frontend/src/api/client.ts
+@@ -1,9 +1,21 @@
+-import type { GradeConfigPayload, GradeResponse, PromptConfig, RubricGenerateRequest, RubricGenerateResponse } from "./types";
++import type {
++  GradeConfigPayload,
++  GradeResponse,
++  GradeStreamCallbacks,
++  PromptConfig,
++  RubricGenerateRequest,
++  RubricGenerateResponse,
++  SSECompleteEvent,
++  SSEErrorEvent,
++  SSEInitEvent,
++  SSEItemEvent,
++  SSEProgressEvent,
++} from "./types";
+ 
+ const API_PREFIX = "/api";
+ 
+ async function parseJsonSafe(resp: Response): Promise<any> {
+   try {
+     return await resp.json();
+   } catch {
+     return null;
+@@ -130,8 +142,157 @@ export async function generateRubric(request: RubricGenerateRequest): Promise<Ru
+ 
+   if (!resp.ok) {
+     const data = await parseJsonSafe(resp);
+     const message = data?.detail || "生成评分标准失败";
+     throw new Error(message);
+   }
+   return resp.json();
+ }
++
++/**
++ * 构建批改请求的 FormData
++ */
++function buildGradeFormData(files: File[], config: GradeConfigPayload): FormData {
++  const formData = new FormData();
++  files.forEach((file) => formData.append("files", file));
++  formData.append("api_url", config.apiUrl);
++  formData.append("api_key", config.apiKey);
++  formData.append("model_name", config.modelName);
++  if (config.multiEnabled) {
++    const models = (config.models || []).slice(0, 2).map((m) => ({
++      api_url: m.api_url || "",
++      api_key: m.api_key || "",
++      model_name: m.model_name || "",
++    }));
++    if (models.length > 0) {
++      formData.append("models", JSON.stringify(models));
++    }
++  }
++  formData.append("template", config.template);
++  formData.append("mock", String(config.mock));
++  formData.append("skip_format_check", String(config.skipFormatCheck));
++  formData.append("score_target_max", String(config.scoreTargetMax));
++  return formData;
++}
++
++/**
++ * 流式批改接口，通过 SSE 逐个返回批改结果
++ * @returns AbortController 用于取消请求
++ */
++export function gradeHomeworkStream(
++  files: File[],
++  config: GradeConfigPayload,
++  callbacks: GradeStreamCallbacks
++): AbortController {
++  const controller = new AbortController();
++  const formData = buildGradeFormData(files, config);
++
++  // 使用 fetch 发送 POST 请求并处理 SSE 流
++  fetch(`${API_PREFIX}/grade-stream`, {
++    method: "POST",
++    body: formData,
++    signal: controller.signal,
++  })
++    .then(async (response) => {
++      if (!response.ok) {
++        const data = await parseJsonSafe(response);
++        const message = data?.detail || "流式批改请求失败";
++        callbacks.onError({ message, recoverable: false });
++        return;
++      }
++
++      const reader = response.body?.getReader();
++      if (!reader) {
++        callbacks.onError({ message: "无法获取响应流", recoverable: false });
++        return;
++      }
++
++      const decoder = new TextDecoder();
++      let buffer = "";
++      let currentEvent = "";
++      let currentData = "";
++
++      while (true) {
++        const { done, value } = await reader.read();
++        if (done) break;
++
++        buffer += decoder.decode(value, { stream: true });
++
++        // 处理可能的 \r\n 换行符
++        buffer = buffer.replace(/\r\n/g, "\n");
++
++        // 按行分割，保留最后一行（可能不完整）放回 buffer
++        const lines = buffer.split("\n");
++        buffer = lines.pop() || "";
++
++        for (const line of lines) {
++          const trimmedLine = line.trim();
++
++          if (trimmedLine.startsWith("event:")) {
++            currentEvent = trimmedLine.slice(6).trim();
++          } else if (trimmedLine.startsWith("data:")) {
++            // 支持多行 data（追加）
++            const dataContent = trimmedLine.slice(5).trim();
++            if (currentData) {
++              currentData += "\n" + dataContent;
++            } else {
++              currentData = dataContent;
++            }
++          } else if (trimmedLine === "" && currentData) {
++            // 空行表示事件结束，触发分发
++            try {
++              const data = JSON.parse(currentData);
++              switch (currentEvent) {
++                case "init":
++                  callbacks.onInit(data as SSEInitEvent);
++                  break;
++                case "progress":
++                  callbacks.onProgress(data as SSEProgressEvent);
++                  break;
++                case "item":
++                  callbacks.onItem(data as SSEItemEvent);
++                  break;
++                case "complete":
++                  callbacks.onComplete(data as SSECompleteEvent);
++                  break;
++                case "error":
++                  callbacks.onError(data as SSEErrorEvent);
++                  break;
++                default:
++                  // 未知事件类型，尝试通用处理
++                  console.warn("[SSE] Unknown event type:", currentEvent, data);
++              }
++            } catch (e) {
++              console.error("[SSE] JSON parse error:", e, "data:", currentData);
++            }
++            currentEvent = "";
++            currentData = "";
++          }
++        }
++      }
++      // 流结束后，如果还有未处理的数据，尝试处理
++      if (currentData) {
++        try {
++          const data = JSON.parse(currentData);
++          switch (currentEvent) {
++            case "complete":
++              callbacks.onComplete(data as SSECompleteEvent);
++              break;
++            case "error":
++              callbacks.onError(data as SSEErrorEvent);
++              break;
++          }
++        } catch {
++          // 忽略
++        }
++      }
++    })
++    .catch((err) => {
++      if (err.name === "AbortError") {
++        // 用户主动取消
++        return;
++      }
++      callbacks.onError({ message: err.message || "网络请求失败", recoverable: false });
++    });
++
++  return controller;
++}
+diff --git a/frontend/src/api/types.ts b/frontend/src/api/types.ts
+index 7fc90d9..c12112a 100644
+--- a/frontend/src/api/types.ts
++++ b/frontend/src/api/types.ts
+@@ -95,8 +95,48 @@ export interface RubricGenerateRequest {
+   total_score?: number;
+ }
+ 
+ export interface RubricGenerateResponse {
+   rubric: PromptCategory & { category_key: string };
+   total_score: number;
+   message: string;
+ }
++
++// SSE 流式批改事件类型
++export interface SSEInitEvent {
++  batch_id: string;
++  total_files: number;
++}
++
++export interface SSEProgressEvent {
++  current: number;
++  total: number;
++  percent: number;
++}
++
++export interface SSEItemEvent {
++  item: GradeItem;
++  index: number;
++}
++
++export interface SSECompleteEvent {
++  batch_id: string;
++  total_files: number;
++  success_count: number;
++  error_count: number;
++  average_score: number | null;
++  download_result_url: string;
++  download_error_url: string;
++}
++
++export interface SSEErrorEvent {
++  message: string;
++  recoverable: boolean;
++}
++
++export interface GradeStreamCallbacks {
++  onInit: (data: SSEInitEvent) => void;
++  onProgress: (data: SSEProgressEvent) => void;
++  onItem: (data: SSEItemEvent) => void;
++  onComplete: (data: SSECompleteEvent) => void;
++  onError: (data: SSEErrorEvent) => void;
++}
+diff --git a/frontend/src/app/controller.ts b/frontend/src/app/controller.ts
+index 1c93bea..36dc408 100644
+--- a/frontend/src/app/controller.ts
++++ b/frontend/src/app/controller.ts
+@@ -1,11 +1,20 @@
+ import { onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
+-import { fetchPromptConfig, gradeHomework, savePromptConfig } from "@/api/client";
+-import type { GradeConfigPayload, GradeResponse, PromptConfig, PromptSettings, TemplateOption } from "@/api/types";
++import { fetchPromptConfig, gradeHomework, gradeHomeworkStream, savePromptConfig } from "@/api/client";
++import type {
++  GradeConfigPayload,
++  GradeItem,
++  GradeResponse,
++  PromptConfig,
++  PromptSettings,
++  SSECompleteEvent,
++  SSEProgressEvent,
++  TemplateOption,
++} from "@/api/types";
+ import { useUI } from "@/shared/composables/useUI";
+ 
+ type TabKey = "workspace" | "rules" | "templates" | "settings";
+ type Theme = "dark" | "light";
+ 
+ const STORAGE_KEY = "ai-grader-pro-config";
+ const THEME_KEY = "ai-grader-theme";
+ const WORKSPACE_STATE_KEY = "ai-grader-workspace-state-v1";
+@@ -21,16 +30,25 @@ type WorkspaceCachePayload = {
+ export function useAppController() {
+   const { showToast, confirm } = useUI();
+   const activeTab = ref<TabKey>("workspace");
+   const theme = ref<Theme>("dark");
+   const statusText = ref("就绪");
+   const loading = ref(false);
+   const gradeSessionId = ref(0);
+ 
++  // 流式批改进度状态
++  const streamProgress = reactive<SSEProgressEvent>({
++    current: 0,
++    total: 0,
++    percent: 0,
++  });
++  const streamItems = ref<GradeItem[]>([]);
++  const streamAbortController = ref<AbortController | null>(null);
++
+   const config = reactive<GradeConfigPayload>({
+     apiUrl: "",
+     apiKey: "",
+     modelName: "",
+     multiEnabled: false,
+     models: [],
+     template: "auto",
+     mock: false,
+@@ -263,32 +281,128 @@ export function useAppController() {
+     }
+   }
+ 
+   async function handleGrade(files: File[]) {
+     if (loading.value) return;
+     const currentSession = bumpGradeSession();
+     loading.value = true;
+     statusText.value = "处理中";
++
++    // 重置流式状态
++    streamItems.value = [];
++    streamProgress.current = 0;
++    streamProgress.total = files.length;
++    streamProgress.percent = 0;
++    result.value = null;
++
+     persistWorkspaceState(true);
+-    try {
+-      const resp = await gradeHomework(files, config);
+-      if (currentSession !== gradeSessionId.value) return;
+-      result.value = resp;
+-      statusText.value = "已完成";
+-      persistWorkspaceState(false);
+-      showToast(`批改完成！成功处理 ${resp.success_count} 个文件`, "success");
+-    } catch (err) {
+-      if (currentSession !== gradeSessionId.value) return;
+-      statusText.value = "异常";
+-      persistWorkspaceState(false);
+-      showToast((err as Error).message, "error");
+-    } finally {
+-      if (currentSession !== gradeSessionId.value) return;
++
++    // 使用流式批改
++    const controller = gradeHomeworkStream(files, config, {
++      onInit({ batch_id, total_files }) {
++        console.log("[SSE] onInit:", { batch_id, total_files });
++        if (currentSession !== gradeSessionId.value) return;
++        streamProgress.total = total_files;
++        statusText.value = `正在批改 0/${total_files}`;
++      },
++
++      onProgress({ current, total, percent }) {
++        console.log("[SSE] onProgress:", { current, total, percent });
++        if (currentSession !== gradeSessionId.value) return;
++        streamProgress.current = current;
++        streamProgress.total = total;
++        streamProgress.percent = percent;
++        statusText.value = `正在批改 ${current}/${total} (${percent}%)`;
++      },
++
++      onItem({ item, index }) {
++        console.log("[SSE] onItem:", { index, fileName: item.file_name, score: item.score });
++        if (currentSession !== gradeSessionId.value) return;
++        // 逐条追加结果
++        streamItems.value = [...streamItems.value, item];
++
++        // 同步更新 result 以便界面实时显示
++        const currentItems = streamItems.value;
++        const scores = currentItems.filter((i) => i.score !== null).map((i) => i.score as number);
++        const avgScore = scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : null;
++
++        result.value = {
++          batch_id: "",
++          total_files: streamProgress.total,
++          success_count: currentItems.filter((i) => i.status === "成功").length,
++          error_count: currentItems.filter((i) => i.status !== "成功").length,
++          average_score: avgScore !== null ? Math.round(avgScore * 100) / 100 : null,
++          download_result_url: "",
++          download_error_url: "",
++          items: currentItems,
++        };
++      },
++
++      onComplete(summary: SSECompleteEvent) {
++        console.log("[SSE] onComplete:", summary);
++        if (currentSession !== gradeSessionId.value) return;
++        // 最终结果
++        result.value = {
++          batch_id: summary.batch_id,
++          total_files: summary.total_files,
++          success_count: summary.success_count,
++          error_count: summary.error_count,
++          average_score: summary.average_score,
++          download_result_url: summary.download_result_url,
++          download_error_url: summary.download_error_url,
++          items: streamItems.value,
++        };
++
++        loading.value = false;
++        statusText.value = "已完成";
++        persistWorkspaceState(false);
++        showToast(`批改完成！成功处理 ${summary.success_count} 个文件`, "success");
++        streamAbortController.value = null;
++      },
++
++      onError({ message, recoverable }) {
++        console.log("[SSE] onError:", { message, recoverable });
++        if (currentSession !== gradeSessionId.value) return;
++        loading.value = false;
++        statusText.value = "异常";
++        persistWorkspaceState(false);
++        showToast(message, "error");
++        streamAbortController.value = null;
++
++        // 如果有部分结果，保留它们
++        if (streamItems.value.length > 0) {
++          const currentItems = streamItems.value;
++          const scores = currentItems.filter((i) => i.score !== null).map((i) => i.score as number);
++          const avgScore = scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : null;
++
++          result.value = {
++            batch_id: "",
++            total_files: streamProgress.total,
++            success_count: currentItems.filter((i) => i.status === "成功").length,
++            error_count: currentItems.filter((i) => i.status !== "成功").length,
++            average_score: avgScore !== null ? Math.round(avgScore * 100) / 100 : null,
++            download_result_url: "",
++            download_error_url: "",
++            items: currentItems,
++          };
++        }
++      },
++    });
++
++    streamAbortController.value = controller;
++  }
++
++  function cancelGrade() {
++    if (streamAbortController.value) {
++      streamAbortController.value.abort();
++      streamAbortController.value = null;
+       loading.value = false;
++      statusText.value = "已取消";
++      showToast("批改已取消", "warning");
+     }
+   }
+ 
+   async function handleSavePrompt(payload: PromptConfig) {
+     promptSaving.value = true;
+     try {
+       await savePromptConfig(payload);
+       promptConfig.value = payload;
+@@ -366,20 +480,23 @@ export function useAppController() {
+     loading,
+     result,
+     promptConfig,
+     promptLoading,
+     promptSaving,
+     promptError,
+     templateOptions,
+     promptSettings,
++    streamProgress,
++    streamItems,
+     toggleTheme,
+     updateConfig,
+     updatePromptSettings,
+     handleGrade,
++    cancelGrade,
+     clearWorkspaceState,
+     clearAllLocalCache,
+     loadPromptConfig,
+     handleSavePrompt,
+     resetConfigToDefaults,
+     resetPromptSettingsToDefaults,
+     executeClearCache,
+     config,
+diff --git a/frontend/src/modules/workspace/styles/workspace-panel.css b/frontend/src/modules/workspace/styles/workspace-panel.css
+index 44d901c..265bb52 100644
+--- a/frontend/src/modules/workspace/styles/workspace-panel.css
++++ b/frontend/src/modules/workspace/styles/workspace-panel.css
+@@ -803,8 +803,57 @@ input:checked ~ .switch-track .switch-thumb { transform: translateX(20px); }
+ 
+ /* Empty State */
+ .empty-list {
+   text-align: center; padding: 60px;
+   color: var(--txt-tertiary); font-size: 14px;
+   background: repeating-linear-gradient(45deg, var(--bg-panel), var(--bg-panel) 10px, var(--bg-app) 10px, var(--bg-app) 20px);
+   border-radius: 20px; border: 1px solid var(--border-dim);
+ }
++
++/* --- Progress Bar (Stream Grading) --- */
++.progress-bar-container {
++  display: flex;
++  align-items: center;
++  gap: 12px;
++  width: 100%;
++  max-width: 280px;
++  margin-top: 8px;
++}
++
++.progress-bar {
++  flex: 1;
++  height: 6px;
++  background: var(--bg-active);
++  border-radius: 3px;
++  overflow: hidden;
++  border: 1px solid var(--border-dim);
++}
++
++.progress-fill {
++  height: 100%;
++  background: linear-gradient(90deg, var(--brand), var(--brand-hover));
++  border-radius: 3px;
++  transition: width 0.3s var(--ease-out-expo);
++  position: relative;
++}
++
++.progress-fill::after {
++  content: '';
++  position: absolute;
++  inset: 0;
++  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
++  animation: shimmer 1.5s infinite;
++}
++
++@keyframes shimmer {
++  0% { transform: translateX(-100%); }
++  100% { transform: translateX(100%); }
++}
++
++.progress-text {
++  font-size: 13px;
++  font-weight: 600;
++  color: var(--brand);
++  font-family: 'JetBrains Mono', monospace;
++  min-width: 48px;
++  text-align: right;
++}
+diff --git a/frontend/src/modules/workspace/ui/WorkspacePanel.vue b/frontend/src/modules/workspace/ui/WorkspacePanel.vue
+index c0ac5b9..b7ce040 100644
+--- a/frontend/src/modules/workspace/ui/WorkspacePanel.vue
++++ b/frontend/src/modules/workspace/ui/WorkspacePanel.vue
+@@ -1,23 +1,25 @@
+ <script setup lang="ts">
+ import { computed, ref, watch } from "vue";
+-import type { GradeConfigPayload, GradeResponse, TemplateOption } from "@/api/types";
++import type { GradeConfigPayload, GradeResponse, SSEProgressEvent, TemplateOption } from "@/api/types";
+ import { useUI } from "@/shared/composables/useUI";
+ 
+ const props = defineProps<{
+   config: GradeConfigPayload;
+   templates: TemplateOption[];
+   loading: boolean;
+   result: GradeResponse | null;
+   statusText: string;
++  streamProgress: SSEProgressEvent;
+ }>();
+ 
+ const emit = defineEmits<{
+   (e: "submit", files: File[]): void;
++  (e: "cancel"): void;
+   (e: "request-settings"): void;
+   (e: "update:config", payload: Partial<GradeConfigPayload>): void;
+   (e: "clear-result"): void;
+   (e: "clear-all-cache"): void;
+ }>();
+ 
+ const { showToast } = useUI();
+ 
+@@ -252,40 +254,55 @@ function updateConfigField<T extends keyof GradeConfigPayload>(key: T, value: Gr
+               <div class="icon-stage">
+                 <div v-if="loading" class="loader-spinner"></div>
+                 <div v-else-if="files.length" v-html="Icons.Doc" class="stage-icon file"></div>
+                 <div v-else v-html="Icons.Upload" class="stage-icon"></div>
+               </div>
+             </div>
+ 
+             <div class="text-anchor">
+-              <h3 v-if="loading" class="zone-title">正在深度分析...</h3>
++              <h3 v-if="loading" class="zone-title">
++                {{ props.streamProgress.total > 0 ? `正在批改 ${props.streamProgress.current}/${props.streamProgress.total}` : '正在深度分析...' }}
++              </h3>
+               <h3 v-else-if="files.length" class="zone-title highlight">{{ fileSummary }}</h3>
+               <h3 v-else class="zone-title">拖拽文件至此</h3>
+-              
++
++              <!-- 进度条 -->
++              <div v-if="loading && props.streamProgress.total > 0" class="progress-bar-container">
++                <div class="progress-bar">
++                  <div class="progress-fill" :style="{ width: `${props.streamProgress.percent}%` }"></div>
++                </div>
++                <span class="progress-text">{{ props.streamProgress.percent }}%</span>
++              </div>
++
+               <p v-if="!loading" class="zone-subtitle">支持 Word / Markdown / Text 格式</p>
+               <p v-if="hint" class="zone-error">{{ hint }}</p>
+             </div>
+ 
+             <div class="action-anchor" v-if="!loading">
+               <label v-if="!files.length" class="bento-btn primary">
+                 <span>选择文件</span>
+                 <input type="file" accept=".docx,.md,.markdown,.txt" multiple hidden @change="onFileChange" />
+               </label>
+-              
++
+               <div v-else class="btn-group">
+                 <button class="bento-btn ghost" @click="files = []">清空</button>
+                 <label class="bento-btn ghost">
+                   <span class="btn-icon" v-html="Icons.Plus"></span>
+                   <span>添加</span>
+                   <input type="file" accept=".docx,.md,.markdown,.txt" multiple hidden @change="onFileAppend" />
+                 </label>
+                 <button class="bento-btn primary" @click="handleSubmit">开始批改</button>
+               </div>
+             </div>
++
++            <!-- 取消按钮 -->
++            <div class="action-anchor" v-if="loading">
++              <button class="bento-btn danger" @click="emit('cancel')">取消批改</button>
++            </div>
+           </div>
+         </div>
+       </div>
+ 
+       <!-- Right: Control Panel -->
+       <div class="stage-right">
+         <!-- Template Card -->
+         <div class="control-card template-card" :class="{ 'is-active': isTemplateOpen }">

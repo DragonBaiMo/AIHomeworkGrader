@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
-import type { GradeConfigPayload, GradeResponse, TemplateOption } from "@/api/types";
+import type { GradeConfigPayload, GradeResponse, SSEProgressEvent, TemplateOption } from "@/api/types";
 import { useUI } from "@/shared/composables/useUI";
 
 const props = defineProps<{
@@ -9,10 +9,12 @@ const props = defineProps<{
   loading: boolean;
   result: GradeResponse | null;
   statusText: string;
+  streamProgress: SSEProgressEvent;
 }>();
 
 const emit = defineEmits<{
   (e: "submit", files: File[]): void;
+  (e: "cancel"): void;
   (e: "request-settings"): void;
   (e: "update:config", payload: Partial<GradeConfigPayload>): void;
   (e: "clear-result"): void;
@@ -83,11 +85,30 @@ const parsedItems = computed(() => {
       } catch {
         detail = {};
       }
+      // 从 sections 结构展平为 rubric_items（兼容旧版 rubric_items 格式）
+      let rubric_items = detail.rubric_items || [];
+      if ((!rubric_items || rubric_items.length === 0) && Array.isArray(detail.sections)) {
+        rubric_items = [];
+        for (const sec of detail.sections) {
+          if (sec && Array.isArray(sec.items)) {
+            for (const it of sec.items) {
+              rubric_items.push({
+                dimension: sec.name,
+                name: it.name,
+                score: it.score,
+                max_score: it.max_score,
+                comment: it.comment,
+                is_deduction: it.is_deduction || false,
+              });
+            }
+          }
+        }
+      }
       parsed = {
-        rubric_items: detail.rubric_items || [],
-        feedback: detail.feedback || item.comment || "",
+        rubric_items,
+        feedback: detail.feedback || detail.comment || item.comment || "",
         error_message: item.error_message || detail.error,
-        display_score: typeof detail.total_score === "number" ? detail.total_score : item.score,
+        display_score: typeof detail.score === "number" ? detail.score : item.score,
         // 从 detail_json 提取实际使用的满分，回退到全局配置
         item_score_target_max: typeof detail.score_target_max === "number" ? detail.score_target_max : null,
       };
@@ -257,10 +278,20 @@ function updateConfigField<T extends keyof GradeConfigPayload>(key: T, value: Gr
             </div>
 
             <div class="text-anchor">
-              <h3 v-if="loading" class="zone-title">正在深度分析...</h3>
+              <h3 v-if="loading" class="zone-title">
+                {{ props.streamProgress.total > 0 ? `正在批改 ${props.streamProgress.current}/${props.streamProgress.total}` : '正在深度分析...' }}
+              </h3>
               <h3 v-else-if="files.length" class="zone-title highlight">{{ fileSummary }}</h3>
               <h3 v-else class="zone-title">拖拽文件至此</h3>
-              
+
+              <!-- 进度条 -->
+              <div v-if="loading && props.streamProgress.total > 0" class="progress-bar-container">
+                <div class="progress-bar">
+                  <div class="progress-fill" :style="{ width: `${props.streamProgress.percent}%` }"></div>
+                </div>
+                <span class="progress-text">{{ props.streamProgress.percent }}%</span>
+              </div>
+
               <p v-if="!loading" class="zone-subtitle">支持 Word / Markdown / Text 格式</p>
               <p v-if="hint" class="zone-error">{{ hint }}</p>
             </div>
@@ -270,7 +301,7 @@ function updateConfigField<T extends keyof GradeConfigPayload>(key: T, value: Gr
                 <span>选择文件</span>
                 <input type="file" accept=".docx,.md,.markdown,.txt" multiple hidden @change="onFileChange" />
               </label>
-              
+
               <div v-else class="btn-group">
                 <button class="bento-btn ghost" @click="files = []">清空</button>
                 <label class="bento-btn ghost">
@@ -280,6 +311,11 @@ function updateConfigField<T extends keyof GradeConfigPayload>(key: T, value: Gr
                 </label>
                 <button class="bento-btn primary" @click="handleSubmit">开始批改</button>
               </div>
+            </div>
+
+            <!-- 取消按钮 -->
+            <div class="action-anchor" v-if="loading">
+              <button class="bento-btn danger" @click="emit('cancel')">取消批改</button>
             </div>
           </div>
         </div>
@@ -484,15 +520,22 @@ function updateConfigField<T extends keyof GradeConfigPayload>(key: T, value: Gr
                             </div>
                           </div>
                         </div>
-                        <div 
-                          v-for="(rItem, idx) in item.rubric_items" 
+                        <div
+                          v-for="(rItem, idx) in item.rubric_items"
                           :key="idx"
                           class="rubric-cell"
+                          :class="{ 'is-deduction': rItem.is_deduction }"
                         >
                           <div class="cell-header">
-                            <span class="cell-dim">{{ rItem.dimension }}</span>
-                            <span class="cell-score">{{ rItem.score }} / {{ rItem.max_score }}</span>
+                            <span class="cell-dim">
+                              <span v-if="rItem.is_deduction" class="deduction-tag">扣分项</span>
+                              {{ rItem.dimension }}
+                            </span>
+                            <span class="cell-score" :class="{ 'score-negative': rItem.score < 0 }">
+                              {{ rItem.is_deduction ? rItem.score : rItem.score }} / {{ rItem.is_deduction ? `-${rItem.max_score}` : rItem.max_score }}
+                            </span>
                           </div>
+                          <div class="cell-name">{{ rItem.name }}</div>
                           <div class="cell-comment">{{ rItem.comment }}</div>
                           <div class="cell-reason" v-if="rItem.reason">
                              <span class="reason-label">理由:</span> {{ rItem.reason }}

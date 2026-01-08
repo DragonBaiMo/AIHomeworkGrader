@@ -29,6 +29,7 @@ class RubricItem:
 
     name: str
     max_score: float
+    is_deduction: bool = False
 
 
 @dataclass(frozen=True)
@@ -67,8 +68,10 @@ def build_expected_rubric(category_cfg: CategoryPromptConfig) -> RubricExpected:
         items: List[RubricItem] = []
         sec_sum = 0.0
         for item in sec.items:
-            items.append(RubricItem(name=item.key, max_score=float(item.max_score)))
-            sec_sum += float(item.max_score)
+            items.append(RubricItem(name=item.key, max_score=float(item.max_score), is_deduction=item.is_deduction))
+            # 扣分项不计入 sec_sum
+            if not item.is_deduction:
+                sec_sum += float(item.max_score)
         sections.append(RubricSection(name=sec.key, max_score=sec_sum, items=items))
         total += sec_sum
     return RubricExpected(category_name=category_cfg.display_name, rubric_max=total, sections=sections)
@@ -79,10 +82,14 @@ def _render_rubric_human_text(category_cfg: CategoryPromptConfig) -> str:
     lines.append(f"- category_name：{category_cfg.display_name}")
     lines.append(" - rubric：")
     for idx, sec in enumerate(category_cfg.sections, start=1):
-        sec_total = sum(float(i.max_score) for i in sec.items)
+        # 仅计算非扣分项的总分
+        sec_total = sum(float(i.max_score) for i in sec.items if not i.is_deduction)
         lines.append(f"   {idx}、{sec.key}（{sec_total}分）")
         for item_idx, item in enumerate(sec.items, start=1):
-            lines.append(f"   {item_idx}. {item.key}（{float(item.max_score)}分）：{item.description}")
+            if item.is_deduction:
+                lines.append(f"   {item_idx}. 【扣分项】{item.key}（最多扣{float(item.max_score)}分）：{item.description}")
+            else:
+                lines.append(f"   {item_idx}. {item.key}（{float(item.max_score)}分）：{item.description}")
     return "\n".join(lines).strip()
 
 
@@ -91,13 +98,22 @@ def _render_output_skeleton(expected: RubricExpected, score_target_max: float) -
     for sec in expected.sections:
         items_out: List[Dict[str, Any]] = []
         for item in sec.items:
-            items_out.append(
-                {
-                    "name": item.name,
-                    "score": None,
-                    "comment": "（占位符：请填写该细则的扣分原因或得分依据）",
-                }
-            )
+            if item.is_deduction:
+                items_out.append(
+                    {
+                        "name": item.name,
+                        "score": None,
+                        "comment": f"（占位符：扣分项，分数范围 -{item.max_score}~0，请填写扣分原因，无问题则给0分）",
+                    }
+                )
+            else:
+                items_out.append(
+                    {
+                        "name": item.name,
+                        "score": None,
+                        "comment": "（占位符：请填写该细则的扣分原因或得分依据）",
+                    }
+                )
         sections_out.append(
             {
                 "name": sec.name,

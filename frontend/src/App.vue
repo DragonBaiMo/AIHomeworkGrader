@@ -19,10 +19,12 @@ const {
   promptError,
   templateOptions,
   promptSettings,
+  streamProgress,
   toggleTheme,
   updateConfig,
   updatePromptSettings,
   handleGrade,
+  cancelGrade,
   clearWorkspaceState,
   clearAllLocalCache,
   loadPromptConfig,
@@ -99,14 +101,16 @@ const {
       <div class="viewport-content custom-scrollbar">
         <Transition name="page-transition" mode="out-in">
           <KeepAlive :include="['WorkspacePanel', 'PromptEditor', 'PromptTemplates', 'SettingsPanel']" :max="4">
-            <WorkspacePanel 
+            <WorkspacePanel
               v-if="activeTab === 'workspace'"
               :config="config"
               :templates="templateOptions"
               :loading="loading"
               :result="result"
               :status-text="statusText"
+              :stream-progress="streamProgress"
               @submit="handleGrade"
+              @cancel="cancelGrade"
               @clear-result="clearWorkspaceState"
               @clear-all-cache="clearAllLocalCache"
               @request-settings="activeTab = 'settings'"

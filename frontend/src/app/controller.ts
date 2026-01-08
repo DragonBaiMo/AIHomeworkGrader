@@ -1,6 +1,15 @@
 import { onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
-import { fetchPromptConfig, gradeHomework, savePromptConfig } from "@/api/client";
-import type { GradeConfigPayload, GradeResponse, PromptConfig, PromptSettings, TemplateOption } from "@/api/types";
+import { fetchPromptConfig, gradeHomework, gradeHomeworkStream, savePromptConfig } from "@/api/client";
+import type {
+  GradeConfigPayload,
+  GradeItem,
+  GradeResponse,
+  PromptConfig,
+  PromptSettings,
+  SSECompleteEvent,
+  SSEProgressEvent,
+  TemplateOption,
+} from "@/api/types";
 import { useUI } from "@/shared/composables/useUI";
 
 type TabKey = "workspace" | "rules" | "templates" | "settings";
@@ -25,6 +34,15 @@ export function useAppController() {
   const statusText = ref("就绪");
   const loading = ref(false);
   const gradeSessionId = ref(0);
+
+  // 流式批改进度状态
+  const streamProgress = reactive<SSEProgressEvent>({
+    current: 0,
+    total: 0,
+    percent: 0,
+  });
+  const streamItems = ref<GradeItem[]>([]);
+  const streamAbortController = ref<AbortController | null>(null);
 
   const config = reactive<GradeConfigPayload>({
     apiUrl: "",
@@ -268,22 +286,113 @@ export function useAppController() {
     const currentSession = bumpGradeSession();
     loading.value = true;
     statusText.value = "处理中";
+
+    // 重置流式状态
+    streamItems.value = [];
+    streamProgress.current = 0;
+    streamProgress.total = files.length;
+    streamProgress.percent = 0;
+    result.value = null;
+
     persistWorkspaceState(true);
-    try {
-      const resp = await gradeHomework(files, config);
-      if (currentSession !== gradeSessionId.value) return;
-      result.value = resp;
-      statusText.value = "已完成";
-      persistWorkspaceState(false);
-      showToast(`批改完成！成功处理 ${resp.success_count} 个文件`, "success");
-    } catch (err) {
-      if (currentSession !== gradeSessionId.value) return;
-      statusText.value = "异常";
-      persistWorkspaceState(false);
-      showToast((err as Error).message, "error");
-    } finally {
-      if (currentSession !== gradeSessionId.value) return;
+
+    // 使用流式批改
+    const controller = gradeHomeworkStream(files, config, {
+      onInit({ batch_id, total_files }) {
+        if (currentSession !== gradeSessionId.value) return;
+        streamProgress.total = total_files;
+        statusText.value = `正在批改 0/${total_files}`;
+      },
+
+      onProgress({ current, total, percent }) {
+        if (currentSession !== gradeSessionId.value) return;
+        streamProgress.current = current;
+        streamProgress.total = total;
+        streamProgress.percent = percent;
+        statusText.value = `正在批改 ${current}/${total} (${percent}%)`;
+      },
+
+      onItem({ item }) {
+        if (currentSession !== gradeSessionId.value) return;
+        // 逐条追加结果
+        streamItems.value = [...streamItems.value, item];
+
+        // 同步更新 result 以便界面实时显示
+        const currentItems = streamItems.value;
+        const scores = currentItems.filter((i) => i.score !== null).map((i) => i.score as number);
+        const avgScore = scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : null;
+
+        result.value = {
+          batch_id: "",
+          total_files: streamProgress.total,
+          success_count: currentItems.filter((i) => i.status === "成功").length,
+          error_count: currentItems.filter((i) => i.status !== "成功").length,
+          average_score: avgScore !== null ? Math.round(avgScore * 100) / 100 : null,
+          download_result_url: "",
+          download_error_url: "",
+          items: currentItems,
+        };
+      },
+
+      onComplete(summary: SSECompleteEvent) {
+        if (currentSession !== gradeSessionId.value) return;
+        // 最终结果
+        result.value = {
+          batch_id: summary.batch_id,
+          total_files: summary.total_files,
+          success_count: summary.success_count,
+          error_count: summary.error_count,
+          average_score: summary.average_score,
+          download_result_url: summary.download_result_url,
+          download_error_url: summary.download_error_url,
+          items: streamItems.value,
+        };
+
+        loading.value = false;
+        statusText.value = "已完成";
+        persistWorkspaceState(false);
+        showToast(`批改完成！成功处理 ${summary.success_count} 个文件`, "success");
+        streamAbortController.value = null;
+      },
+
+      onError({ message }) {
+        if (currentSession !== gradeSessionId.value) return;
+        loading.value = false;
+        statusText.value = "异常";
+        persistWorkspaceState(false);
+        showToast(message, "error");
+        streamAbortController.value = null;
+
+        // 如果有部分结果，保留它们
+        if (streamItems.value.length > 0) {
+          const currentItems = streamItems.value;
+          const scores = currentItems.filter((i) => i.score !== null).map((i) => i.score as number);
+          const avgScore = scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : null;
+
+          result.value = {
+            batch_id: "",
+            total_files: streamProgress.total,
+            success_count: currentItems.filter((i) => i.status === "成功").length,
+            error_count: currentItems.filter((i) => i.status !== "成功").length,
+            average_score: avgScore !== null ? Math.round(avgScore * 100) / 100 : null,
+            download_result_url: "",
+            download_error_url: "",
+            items: currentItems,
+          };
+        }
+      },
+    });
+
+    streamAbortController.value = controller;
+  }
+
+  function cancelGrade() {
+    if (streamAbortController.value) {
+      streamAbortController.value.abort();
+      streamAbortController.value = null;
       loading.value = false;
+      statusText.value = "已取消";
+      showToast("批改已取消", "warning");
     }
   }
 
@@ -371,10 +480,13 @@ export function useAppController() {
     promptError,
     templateOptions,
     promptSettings,
+    streamProgress,
+    streamItems,
     toggleTheme,
     updateConfig,
     updatePromptSettings,
     handleGrade,
+    cancelGrade,
     clearWorkspaceState,
     clearAllLocalCache,
     loadPromptConfig,

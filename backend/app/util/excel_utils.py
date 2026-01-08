@@ -919,7 +919,7 @@ class ExcelExporter:
         )
 
         # 细则明细（主模型 items 扣分清单）
-        rubric_headers = ["学号", "姓名", "维度", "细则项", "该项总分", "得分", "扣分", "原因说明", "改进建议"]
+        rubric_headers = ["学号", "姓名", "维度", "细则项", "满分/限额", "得分", "扣分", "原因说明", "改进建议"]
         ws_rubric, tbl_rubric = self._create_table_sheet(
             wb,
             title="细则明细",
@@ -1193,12 +1193,21 @@ class ExcelExporter:
                     if student_key not in first_row_rubric:
                         first_row_rubric[student_key] = ws_rubric.max_row + 1
                     item_name = str(it.get("name") or "").strip()
+                    item_is_deduction = bool(it.get("is_deduction", False))
+                    if item_is_deduction:
+                        item_name = f"【扣分项】{item_name}"
 
                     item_score = it.get("score")
                     item_max = it.get("max_score")
                     deduct: Optional[float] = None
                     if isinstance(item_score, (int, float)) and isinstance(item_max, (int, float)):
-                        d = max(0.0, float(item_max) - float(item_score))
+                        if item_is_deduction:
+                            # 扣分项：score 是负数，实际扣掉的分数 = abs(score)
+                            d = abs(float(item_score))
+                        else:
+                            # 得分项：score 是正数，实际扣掉的分数 = max - score
+                            d = max(0.0, float(item_max) - float(item_score))
+
                         deduct = float(int(round(d))) if abs(d - round(d)) < 1e-6 else round(d, 2)
 
                     reason = str(it.get("comment") or it.get("reason") or it.get("evidence") or "").strip()

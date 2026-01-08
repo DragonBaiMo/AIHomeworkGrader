@@ -33,6 +33,7 @@ class PromptItem:
     key: str
     max_score: float
     description: str
+    is_deduction: bool = False
 
 
 @dataclass(frozen=True)
@@ -202,6 +203,7 @@ def parse_prompt_config(data: Dict[str, Any]) -> PromptConfig:
                 item_key = str(item.get("key") or "").strip()
                 item_max = float(item.get("max_score") or 0)
                 item_desc = str(item.get("description") or "").strip()
+                item_is_deduction = bool(item.get("is_deduction", False))
                 if not item_key:
                     raise ValueError(f"categories.{cat_key}.sections[{sec_key}].items.key 不能为空")
                 if item_key in item_names:
@@ -209,8 +211,10 @@ def parse_prompt_config(data: Dict[str, Any]) -> PromptConfig:
                 item_names.add(item_key)
                 if item_max <= 0 or not item_desc:
                     raise ValueError(f"categories.{cat_key}.sections[{sec_key}].items.key/max_score/description 非法")
-                items.append(PromptItem(key=item_key, max_score=item_max, description=item_desc))
-                items_sum += float(item_max)
+                items.append(PromptItem(key=item_key, max_score=item_max, description=item_desc, is_deduction=item_is_deduction))
+                # 扣分项不计入 items_sum（因为它是从总分中扣除的）
+                if not item_is_deduction:
+                    items_sum += float(item_max)
 
             if sec_max_raw > 0 and abs(sec_max_raw - items_sum) > 1e-6:
                 logger.warning("评分维度“%s”满分与细则求和不一致：维度=%s，细则求和=%s，已自动更正为细则求和。", sec_key, sec_max_raw, items_sum)
@@ -344,7 +348,10 @@ def render_category_prompt(cat_cfg: CategoryPromptConfig) -> str:
     for idx, sec in enumerate(cat_cfg.sections, start=1):
         parts.append(f"{idx}、{sec.key}（{sec.max_score}分）")
         for item_idx, item in enumerate(sec.items, start=1):
-            parts.append(f"{item_idx}. {item.key}（{item.max_score}分）：{item.description}")
+            if item.is_deduction:
+                parts.append(f"{item_idx}. 【扣分项】{item.key}（最多扣{item.max_score}分）：{item.description}")
+            else:
+                parts.append(f"{item_idx}. {item.key}（{item.max_score}分）：{item.description}")
         parts.append("")
     parts.append("【学生作业正文】")
     parts.append("{{HOMEWORK_TEXT}}")
@@ -437,7 +444,9 @@ def default_rubric_system_hard_rules() -> str:
         "【输出规范（必须严格遵守）】\n"
         "1. 你必须只输出一个 Markdown 代码块，代码块语言标注为 json；除代码块外不要输出任何解释文字。\n"
         "2. 代码块内必须是一个 JSON 对象（不得为数组），并且必须输出 schema_version=2 的结构，字段名、层级、类型都不可更改，不得新增或遗漏字段，不得插入 `model` 或其他非明示字段。\n"
-        "3. 你必须逐条细则给分：每个 items.score 必须在 0～该细则满分 之间。\n"
+        "3. 你必须逐条细则给分：\n"
+        "   - 普通得分项：score 必须在 0～该细则满分 之间。\n"
+        "   - 扣分项（标记为【扣分项】的细则）：score 必须在 -最大扣分额度～0 之间（负数表示扣分，0表示不扣分）。\n"
         "4. 你不需要输出任何总分字段（总分与换算由后端根据评分规则自动计算），只需要输出细则分与评语。\n"
         "5. comment 与各 comment 字段必须为中文，说明扣分原因，不得泄露任何密钥信息。"
     )

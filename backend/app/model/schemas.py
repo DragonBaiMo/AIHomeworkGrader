@@ -5,17 +5,17 @@ from __future__ import annotations
 
 from typing import List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ModelEndpoint(BaseModel):
     """单个模型端点配置（支持多模型批改）。"""
 
+    model_config = ConfigDict(protected_namespaces=())
+
     api_url: str = Field(..., description="大模型接口地址")
     api_key: Optional[str] = Field(None, description="大模型访问密钥")
     model_name: str = Field(..., description="模型名称")
-
-    model_config = {"protected_namespaces": ()}
 
 
 class GradeConfig(BaseModel):
@@ -89,8 +89,9 @@ class RubricItem(BaseModel):
     """评分细则。"""
 
     key: str = Field(..., description="细则名称")
-    max_score: float = Field(..., description="该细则满分")
+    max_score: float = Field(..., description="该细则满分（扣分项时为最大扣分额度）")
     description: str = Field(..., description="评分要求描述")
+    is_deduction: bool = Field(False, description="是否为扣分项（true时分数为负，表示扣分）")
 
 
 class RubricSection(BaseModel):

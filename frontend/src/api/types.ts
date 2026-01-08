@@ -48,6 +48,7 @@ export interface PromptItem {
   key: string;
   max_score: number;
   description: string;
+  is_deduction?: boolean;
 }
 
 export interface PromptSection {
@@ -99,4 +100,44 @@ export interface RubricGenerateResponse {
   rubric: PromptCategory & { category_key: string };
   total_score: number;
   message: string;
+}
+
+// SSE 流式批改事件类型
+export interface SSEInitEvent {
+  batch_id: string;
+  total_files: number;
+}
+
+export interface SSEProgressEvent {
+  current: number;
+  total: number;
+  percent: number;
+}
+
+export interface SSEItemEvent {
+  item: GradeItem;
+  index: number;
+}
+
+export interface SSECompleteEvent {
+  batch_id: string;
+  total_files: number;
+  success_count: number;
+  error_count: number;
+  average_score: number | null;
+  download_result_url: string;
+  download_error_url: string;
+}
+
+export interface SSEErrorEvent {
+  message: string;
+  recoverable: boolean;
+}
+
+export interface GradeStreamCallbacks {
+  onInit: (data: SSEInitEvent) => void;
+  onProgress: (data: SSEProgressEvent) => void;
+  onItem: (data: SSEItemEvent) => void;
+  onComplete: (data: SSECompleteEvent) => void;
+  onError: (data: SSEErrorEvent) => void;
 }

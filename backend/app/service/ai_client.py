@@ -454,7 +454,11 @@ class AIClient:
                     item_model = model_items_by_name.get(item_expected.name)
                     if not isinstance(item_model, dict):
                         raise ValueError(f"缺失评分细则：{sec_expected.name} / {item_expected.name}")
-                    item_score = clamp_min_max(to_float(item_model.get("score")), 0.0, float(item_expected.max_score))
+                    # 扣分项：分数范围 -max_score ~ 0，得分项：分数范围 0 ~ max_score
+                    if item_expected.is_deduction:
+                        item_score = clamp_min_max(to_float(item_model.get("score")), -float(item_expected.max_score), 0.0)
+                    else:
+                        item_score = clamp_min_max(to_float(item_model.get("score")), 0.0, float(item_expected.max_score))
                     item_comment = str(item_model.get("comment") or "").strip()
                     if not item_comment:
                         item_comment = "未提供细则扣分原因。"
@@ -465,6 +469,7 @@ class AIClient:
                             "max_score": float(item_expected.max_score),
                             "score": float(item_score),
                             "comment": item_comment,
+                            "is_deduction": item_expected.is_deduction,
                         }
                     )
 
@@ -480,7 +485,9 @@ class AIClient:
                     }
                 )
 
-            score_rubric = clamp_min_max(score_rubric, 0.0, score_rubric_max)
+            # 总分可能因扣分项而低于0，但最低不应低于0
+            score_rubric = max(score_rubric, 0.0)
+            score_rubric = min(score_rubric, score_rubric_max)
             score = round(score_rubric * float(score_target_max) / score_rubric_max, 2)
 
             return {

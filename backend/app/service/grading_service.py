@@ -8,7 +8,7 @@ import statistics
 import json
 import time
 from pathlib import Path
-from typing import Iterable, List, Optional
+from typing import Any, AsyncGenerator, Iterable, List, Optional
 from urllib.parse import urlsplit
 
 from fastapi import UploadFile
@@ -93,6 +93,249 @@ class GradingService:
                 best = item
                 best_gap = gap
         return best
+
+    @staticmethod
+    def _archive_batch(batch_id: str, batch_dir: Path) -> None:
+        """归档批次结果到 archives 目录。"""
+        try:
+            from datetime import datetime
+            import shutil
+
+            today_str = datetime.now().strftime("%Y%m%d")
+            archive_dir = BASE_DIR / "data" / "archives" / today_str / batch_id
+            archive_dir.mkdir(parents=True, exist_ok=True)
+
+            src_result = batch_dir / "grade_result.xlsx"
+            if src_result.exists():
+                shutil.copy2(src_result, archive_dir / "grade_result.xlsx")
+
+            src_error = batch_dir / "error_list.xlsx"
+            if src_error.exists():
+                shutil.copy2(src_error, archive_dir / "error_list.xlsx")
+
+            logger.info("批次归档完成：%s", archive_dir)
+        except Exception as e:
+            logger.warning("批次归档失败：%s", e)
+
+    async def _grade_single_file(
+        self,
+        file_path: Path,
+        config: GradeConfig,
+        model_endpoints: list[ModelEndpoint],
+        prompt_config: Any,
+        auditor: AuditLogger,
+    ) -> tuple[GradeItem, Optional[dict]]:
+        """处理单个文件的核心批改逻辑（共享方法）。
+
+        Returns:
+            tuple[GradeItem, Optional[dict]]: (批改结果, 错误行信息或None)
+        """
+        async with _FILE_SEMAPHORE:
+            system_prompt: str = ""
+            user_prompt: str = ""
+            resolved_user_prompt: str | None = None
+            try:
+                validate_supported_file(file_path)
+                meta: FileMeta = parse_filename_meta(file_path.name)
+                category: AssignmentCategory = detect_assignment_category(file_path.name, config.template)
+                rule = get_rule(category)
+                content = parse_file_text(file_path, min_length=rule.min_length)
+                student_id = meta.student_id
+                student_name = meta.student_name
+                raw_length = len(content)
+                auditor.log_operation(f"开始处理文件 {file_path.name}，识别为 {category}")
+
+                if prompt_config is None or category not in prompt_config.categories:
+                    raise ValueError("未找到对应分类的评分规则配置，请先在「评分规则」页面配置并保存。")
+                category_cfg = prompt_config.categories[category]
+                if file_path.suffix.lower() == ".docx" and not config.skip_format_check and category_cfg.docx_validation.enabled:
+                    validate_docx_format(
+                        file_path,
+                        allowed_font_keywords=category_cfg.docx_validation.allowed_font_keywords,
+                        allowed_font_size_pts=category_cfg.docx_validation.allowed_font_size_pts,
+                        font_size_tolerance=category_cfg.docx_validation.font_size_tolerance,
+                        target_line_spacing=category_cfg.docx_validation.target_line_spacing,
+                        line_spacing_tolerance=category_cfg.docx_validation.line_spacing_tolerance,
+                    )
+
+                current_score_target = float(config.score_target_max)
+                if category_cfg.score_target_max is not None and category_cfg.score_target_max > 0:
+                    current_score_target = float(category_cfg.score_target_max)
+
+                user_prompt, expected = build_user_prompt(category_cfg, score_target_max=current_score_target)
+                system_prompt = build_system_prompt(prompt_config.system_prompt)
+                auditor.save_prompts(system_prompt, user_prompt)
+                resolved_user_prompt = AIClient._build_user_content(user_prompt, content)
+
+                if not model_endpoints:
+                    raise ValueError("未配置任何可用模型，请在设置中填写模型端点与名称。")
+
+                tasks = [
+                    self._grade_one_model(
+                        model_index=idx,
+                        endpoint=endpoint,
+                        mock=config.mock,
+                        content=content,
+                        system_prompt=system_prompt,
+                        user_prompt=user_prompt,
+                        expected=expected,
+                        score_target_max=current_score_target,
+                    )
+                    for idx, endpoint in enumerate(model_endpoints, start=1)
+                ]
+                model_results = await asyncio.gather(*tasks)
+
+                success = [r for r in model_results if r.get("status") == "success" and r.get("score") is not None]
+                if not success:
+                    errors = [str(r.get("error_message") or "未知错误") for r in model_results]
+                    message = "；".join(errors[:3])
+                    auditor.append_error(file_path.name, message)
+                    auditor.log_operation(f"文件 {file_path.name} 所有模型均失败：{message}")
+                    for r in model_results:
+                        auditor.save_model_interaction(
+                            file_path.name, system_prompt, user_prompt, {},
+                            model_id=f"m{r.get('model_index')}",
+                            resolved_user_prompt=resolved_user_prompt,
+                            raw_response=r.get("raw_response"),
+                            status="failure",
+                        )
+                    item = GradeItem(
+                        file_name=file_path.name,
+                        student_id=student_id,
+                        student_name=student_name,
+                        score=None,
+                        score_rubric_max=None,
+                        score_rubric=None,
+                        detail_json=None,
+                        comment=None,
+                        status="失败",
+                        error_message=f"所有模型评分失败：{message}",
+                        raw_text_length=raw_length,
+                        raw_response=None,
+                        aggregate_strategy="mean",
+                        grader_results=[
+                            {
+                                "model_index": r.get("model_index"),
+                                "api_url": r.get("api_url"),
+                                "model_name": r.get("model_name"),
+                                "status": "失败",
+                                "score": r.get("score"),
+                                "comment": r.get("comment"),
+                                "error_message": r.get("error_message"),
+                                "latency_ms": r.get("latency_ms"),
+                            }
+                            for r in model_results
+                        ],
+                    )
+                    return item, {"file_name": file_path.name, "error_type": "模型调用错误", "error_message": item.error_message}
+
+                scores_success = [float(r.get("score")) for r in success]
+                mean_score = float(statistics.mean(scores_success))
+                picked = self._pick_representative_result(success, mean_score)
+                normalized_result = (picked or {}).get("normalized_result") or {}
+
+                overall_comment = normalized_result.get("comment")
+                if config.models and not config.mock:
+                    try:
+                        main_endpoint = model_endpoints[0]
+                        sem = await _get_model_semaphore(main_endpoint.api_url)
+                        system2, user2 = self._build_overall_comment_prompts(
+                            category=str(category),
+                            score_target_max=current_score_target,
+                            aggregate_score=float(mean_score),
+                            model_results=[
+                                {
+                                    "model_index": r.get("model_index"),
+                                    "model_name": r.get("model_name"),
+                                    "status": "成功" if r.get("status") == "success" else "失败",
+                                    "score": r.get("score"),
+                                    "comment": r.get("comment"),
+                                    "error_message": r.get("error_message"),
+                                }
+                                for r in model_results
+                            ],
+                        )
+                        async with sem:
+                            client2 = AIClient(main_endpoint.api_url, main_endpoint.api_key, main_endpoint.model_name, mock=False)
+                            raw2, parsed2 = await client2.chat_json(system_prompt=system2, user_prompt=user2, required_fields=("comment",))
+                        auditor.save_model_interaction(
+                            file_path.name, system2, user2, {"overall_review": parsed2},
+                            model_id="overall_comment",
+                            resolved_user_prompt=None,
+                            raw_response=raw2,
+                            status="success",
+                        )
+                        overall_comment = str(parsed2.get("comment") or "").strip() or overall_comment
+                        normalized_result["overall_review"] = parsed2
+                    except Exception as exc:
+                        logger.warning("总体评语生成失败（多模型模式）：%s -> %s", file_path.name, exc)
+                        auditor.append_error(file_path.name, f"总体评语生成失败：{exc}")
+
+                detail_json = json.dumps(normalized_result, ensure_ascii=False)
+
+                for r in model_results:
+                    auditor.save_model_interaction(
+                        file_path.name, system_prompt, user_prompt,
+                        (r.get("normalized_result") or {}) if r.get("status") == "success" else {},
+                        model_id=f"m{r.get('model_index')}",
+                        resolved_user_prompt=resolved_user_prompt,
+                        raw_response=r.get("raw_response"),
+                        status="success" if r.get("status") == "success" else "failure",
+                    )
+
+                item = GradeItem(
+                    file_name=file_path.name,
+                    student_id=student_id,
+                    student_name=student_name,
+                    score=round(mean_score, 2),
+                    score_rubric_max=normalized_result.get("score_rubric_max"),
+                    score_rubric=normalized_result.get("score_rubric"),
+                    detail_json=detail_json,
+                    comment=overall_comment,
+                    status="成功",
+                    error_message=None,
+                    raw_text_length=raw_length,
+                    raw_response=None,
+                    aggregate_strategy="mean",
+                    grader_results=[
+                        {
+                            "model_index": r.get("model_index"),
+                            "api_url": r.get("api_url"),
+                            "model_name": r.get("model_name"),
+                            "status": "成功" if r.get("status") == "success" else "失败",
+                            "score": r.get("score"),
+                            "comment": r.get("comment"),
+                            "error_message": r.get("error_message"),
+                            "latency_ms": r.get("latency_ms"),
+                            "sections": (r.get("normalized_result") or {}).get("sections") if r.get("status") == "success" else None,
+                        }
+                        for r in model_results
+                    ],
+                )
+                return item, None
+            except ValueError as exc:
+                logger.warning("文件处理异常：%s -> %s", file_path.name, exc)
+                auditor.append_error(file_path.name, str(exc))
+                auditor.log_operation(f"文件 {file_path.name} 处理失败：{exc}")
+                return (
+                    GradeItem(
+                        file_name=file_path.name,
+                        student_id=None,
+                        student_name=None,
+                        score=None,
+                        score_rubric_max=None,
+                        score_rubric=None,
+                        detail_json=None,
+                        comment=None,
+                        status="失败",
+                        error_message=str(exc),
+                        raw_text_length=0,
+                        raw_response=None,
+                        aggregate_strategy="mean",
+                        grader_results=None,
+                    ),
+                    {"file_name": file_path.name, "error_type": "解析校验错误", "error_message": str(exc)},
+                )
 
     async def _grade_one_model(
         self,
@@ -208,225 +451,11 @@ class GradingService:
         grade_items: List[GradeItem] = []
         error_rows: List[dict] = []
 
-        async def process_one(file_path: Path) -> tuple[GradeItem, Optional[dict]]:
-            async with _FILE_SEMAPHORE:
-                system_prompt: str = ""
-                user_prompt: str = ""
-                resolved_user_prompt: str | None = None
-                try:
-                    validate_supported_file(file_path)
-                    meta: FileMeta = parse_filename_meta(file_path.name)
-                    category: AssignmentCategory = detect_assignment_category(file_path.name, config.template)
-                    rule = get_rule(category)
-                    content = parse_file_text(file_path, min_length=rule.min_length)
-                    student_id = meta.student_id
-                    student_name = meta.student_name
-                    raw_length = len(content)
-                    auditor.log_operation(f"开始处理文件 {file_path.name}，识别为 {category}")
-
-                    if prompt_config is None or category not in prompt_config.categories:
-                        raise ValueError("未找到对应分类的评分规则配置，请先在“评分规则”页面配置并保存。")
-                    category_cfg = prompt_config.categories[category]
-                    if file_path.suffix.lower() == ".docx" and not config.skip_format_check and category_cfg.docx_validation.enabled:
-                        validate_docx_format(
-                            file_path,
-                            allowed_font_keywords=category_cfg.docx_validation.allowed_font_keywords,
-                            allowed_font_size_pts=category_cfg.docx_validation.allowed_font_size_pts,
-                            font_size_tolerance=category_cfg.docx_validation.font_size_tolerance,
-                            target_line_spacing=category_cfg.docx_validation.target_line_spacing,
-                            line_spacing_tolerance=category_cfg.docx_validation.line_spacing_tolerance,
-                        )
-
-                    # 动态获取分值：若规则配置了 target_score，则覆盖全局配置
-                    current_score_target = float(config.score_target_max)
-                    if category_cfg.score_target_max is not None and category_cfg.score_target_max > 0:
-                        current_score_target = float(category_cfg.score_target_max)
-
-                    user_prompt, expected = build_user_prompt(category_cfg, score_target_max=current_score_target)
-                    system_prompt = build_system_prompt(prompt_config.system_prompt)
-                    auditor.save_prompts(system_prompt, user_prompt)
-                    resolved_user_prompt = AIClient._build_user_content(user_prompt, content)
-
-                    if not model_endpoints:
-                        raise ValueError("未配置任何可用模型，请在设置中填写模型端点与名称。")
-
-                    tasks = [
-                        self._grade_one_model(
-                            model_index=idx,
-                            endpoint=endpoint,
-                            mock=config.mock,
-                            content=content,
-                            system_prompt=system_prompt,
-                            user_prompt=user_prompt,
-
-                            expected=expected,
-                            score_target_max=current_score_target,
-                        )
-                        for idx, endpoint in enumerate(model_endpoints, start=1)
-                    ]
-                    model_results = await asyncio.gather(*tasks)
-
-                    success = [r for r in model_results if r.get("status") == "success" and r.get("score") is not None]
-                    if not success:
-                        errors = [str(r.get("error_message") or "未知错误") for r in model_results]
-                        message = "；".join(errors[:3])
-                        auditor.append_error(file_path.name, message)
-                        auditor.log_operation(f"文件 {file_path.name} 所有模型均失败：{message}")
-                        for r in model_results:
-                            auditor.save_model_interaction(
-                                file_path.name,
-                                system_prompt,
-                                user_prompt,
-                                {},
-                                model_id=f"m{r.get('model_index')}",
-                                resolved_user_prompt=resolved_user_prompt,
-                                raw_response=r.get("raw_response"),
-                                status="failure",
-                            )
-                        item = GradeItem(
-                            file_name=file_path.name,
-                            student_id=student_id,
-                            student_name=student_name,
-                            score=None,
-                            score_rubric_max=None,
-                            score_rubric=None,
-                            detail_json=None,
-                            comment=None,
-                            status="失败",
-                            error_message=f"所有模型评分失败：{message}",
-                            raw_text_length=raw_length,
-                            raw_response=None,
-                            aggregate_strategy="mean",
-                            grader_results=[
-                                {
-                                    "model_index": r.get("model_index"),
-                                    "api_url": r.get("api_url"),
-                                    "model_name": r.get("model_name"),
-                                    "status": "失败",
-                                    "score": r.get("score"),
-                                    "comment": r.get("comment"),
-                                    "error_message": r.get("error_message"),
-                                    "latency_ms": r.get("latency_ms"),
-                                }
-                                for r in model_results
-                            ],
-                        )
-                        return item, {"file_name": file_path.name, "error_type": "模型调用错误", "error_message": item.error_message}
-
-                    scores_success = [float(r.get("score")) for r in success]
-                    mean_score = float(statistics.mean(scores_success))
-                    picked = self._pick_representative_result(success, mean_score)
-                    normalized_result = (picked or {}).get("normalized_result") or {}
-
-                    overall_comment = normalized_result.get("comment")
-                    if config.models and not config.mock:
-                        try:
-                            main_endpoint = model_endpoints[0]
-                            sem = await _get_model_semaphore(main_endpoint.api_url)
-                            system2, user2 = self._build_overall_comment_prompts(
-                                category=str(category),
-                                score_target_max=current_score_target,
-                                aggregate_score=float(mean_score),
-                                model_results=[
-                                    {
-                                        "model_index": r.get("model_index"),
-                                        "model_name": r.get("model_name"),
-                                        "status": "成功" if r.get("status") == "success" else "失败",
-                                        "score": r.get("score"),
-                                        "comment": r.get("comment"),
-                                        "error_message": r.get("error_message"),
-                                    }
-                                    for r in model_results
-                                ],
-                            )
-                            async with sem:
-                                client2 = AIClient(main_endpoint.api_url, main_endpoint.api_key, main_endpoint.model_name, mock=False)
-                                raw2, parsed2 = await client2.chat_json(system_prompt=system2, user_prompt=user2, required_fields=("comment",))
-                            auditor.save_model_interaction(
-                                file_path.name,
-                                system2,
-                                user2,
-                                {"overall_review": parsed2},
-                                model_id="overall_comment",
-                                resolved_user_prompt=None,
-                                raw_response=raw2,
-                                status="success",
-                            )
-                            overall_comment = str(parsed2.get("comment") or "").strip() or overall_comment
-                            normalized_result["overall_review"] = parsed2
-                        except Exception as exc:  # noqa: BLE001
-                            logger.warning("总体评语生成失败（多模型模式）：%s -> %s", file_path.name, exc)
-                            auditor.append_error(file_path.name, f"总体评语生成失败：{exc}")
-
-                    detail_json = json.dumps(normalized_result, ensure_ascii=False)
-
-                    for r in model_results:
-                        auditor.save_model_interaction(
-                            file_path.name,
-                            system_prompt,
-                            user_prompt,
-                            (r.get("normalized_result") or {}) if r.get("status") == "success" else {},
-                            model_id=f"m{r.get('model_index')}",
-                            resolved_user_prompt=resolved_user_prompt,
-                            raw_response=r.get("raw_response"),
-                            status="success" if r.get("status") == "success" else "failure",
-                        )
-
-                    item = GradeItem(
-                        file_name=file_path.name,
-                        student_id=student_id,
-                        student_name=student_name,
-                        score=round(mean_score, 2),
-                        score_rubric_max=normalized_result.get("score_rubric_max"),
-                        score_rubric=normalized_result.get("score_rubric"),
-                        detail_json=detail_json,
-                        comment=overall_comment,
-                        status="成功",
-                        error_message=None,
-                        raw_text_length=raw_length,
-                        raw_response=None,
-                        aggregate_strategy="mean",
-                        grader_results=[
-                            {
-                                "model_index": r.get("model_index"),
-                                "api_url": r.get("api_url"),
-                                "model_name": r.get("model_name"),
-                                "status": "成功" if r.get("status") == "success" else "失败",
-                                "score": r.get("score"),
-                                "comment": r.get("comment"),
-                                "error_message": r.get("error_message"),
-                                "latency_ms": r.get("latency_ms"),
-                                "sections": (r.get("normalized_result") or {}).get("sections") if r.get("status") == "success" else None,
-                            }
-                            for r in model_results
-                        ],
-                    )
-                    return item, None
-                except ValueError as exc:
-                    logger.warning("文件处理异常：%s -> %s", file_path.name, exc)
-                    auditor.append_error(file_path.name, str(exc))
-                    auditor.log_operation(f"文件 {file_path.name} 处理失败：{exc}")
-                    return (
-                        GradeItem(
-                            file_name=file_path.name,
-                            student_id=None,
-                            student_name=None,
-                            score=None,
-                            score_rubric_max=None,
-                            score_rubric=None,
-                            detail_json=None,
-                            comment=None,
-                            status="失败",
-                            error_message=str(exc),
-                            raw_text_length=0,
-                            raw_response=None,
-                            aggregate_strategy="mean",
-                            grader_results=None,
-                        ),
-                        {"file_name": file_path.name, "error_type": "解析校验错误", "error_message": str(exc)},
-                    )
-
-        results = await asyncio.gather(*[process_one(p) for p in stored_paths])
+        # 使用共享的 _grade_single_file 方法
+        results = await asyncio.gather(*[
+            self._grade_single_file(p, config, model_endpoints, prompt_config, auditor)
+            for p in stored_paths
+        ])
         for item, error_row in results:
             grade_items.append(item)
             if error_row:
@@ -459,29 +488,9 @@ class GradingService:
             error_rows=error_rows,
         )
         exporter.export_errors(error_rows)
-        exporter.export_errors(error_rows)
 
-        # 归档逻辑
-        try:
-            from datetime import datetime
-            import shutil
-            from config.settings import BASE_DIR
-
-            today_str = datetime.now().strftime("%Y%m%d")
-            archive_dir = BASE_DIR / "data" / "archives" / today_str / batch_id
-            archive_dir.mkdir(parents=True, exist_ok=True)
-
-            src_result = batch_dir / "grade_result.xlsx"
-            if src_result.exists():
-                shutil.copy2(src_result, archive_dir / "grade_result.xlsx")
-
-            src_error = batch_dir / "error_list.xlsx"
-            if src_error.exists():
-                shutil.copy2(src_error, archive_dir / "error_list.xlsx")
-
-            logger.info("批次归档完成：%s", archive_dir)
-        except Exception as e:
-            logger.warning("批次归档失败：%s", e)
+        # 使用共享的归档方法
+        self._archive_batch(batch_id, batch_dir)
 
         response = GradeResponse(
             batch_id=batch_id,
@@ -511,3 +520,181 @@ class GradingService:
         if file_type == "error":
             return batch_dir / "error_list.xlsx"
         raise FileNotFoundError("不支持的文件类型")
+
+    async def process_stream(
+        self, files: Iterable[UploadFile], config: GradeConfig
+    ) -> AsyncGenerator[dict[str, Any], None]:
+        """流式处理批改，逐个 yield SSE 事件。
+
+        事件类型:
+        - init: 批次初始化完成，包含 batch_id 和 total_files
+        - progress: 进度更新，包含 current, total, percent
+        - item: 单个文件批改完成，包含 GradeItem
+        - complete: 全部处理完毕，包含汇总统计
+        - error: 致命错误
+        """
+        batch_id = generate_batch_id()
+        try:
+            batch_dir, stored_paths = save_upload_files(batch_id, files)
+        except Exception as exc:
+            yield {"event": "error", "data": {"message": f"文件保存失败：{exc}", "recoverable": False}}
+            return
+
+        async for event in self._process_stream_from_paths(batch_id, batch_dir, stored_paths, config):
+            yield event
+
+    async def process_stream_from_saved(
+        self,
+        batch_id: str,
+        batch_dir: Path,
+        stored_paths: List[Path],
+        config: GradeConfig,
+    ) -> AsyncGenerator[dict[str, Any], None]:
+        """从已保存的文件路径进行流式处理（用于 SSE 场景，文件已提前保存）。"""
+        async for event in self._process_stream_from_paths(batch_id, batch_dir, stored_paths, config):
+            yield event
+
+    async def _process_stream_from_paths(
+        self,
+        batch_id: str,
+        batch_dir: Path,
+        stored_paths: List[Path],
+        config: GradeConfig,
+    ) -> AsyncGenerator[dict[str, Any], None]:
+        """内部流式处理实现，基于已保存的文件路径。"""
+        total_files = len(stored_paths)
+        if total_files == 0:
+            yield {"event": "error", "data": {"message": "没有有效的文件可处理", "recoverable": False}}
+            return
+
+        exporter = ExcelExporter(batch_dir)
+        prompt_config = load_prompt_config()
+        auditor = AuditLogger(batch_id)
+        model_endpoints = self._resolve_model_endpoints(config)
+
+        logger.info(
+            "流式批改启动：batch_id=%s，文件数=%d，模型数=%d",
+            batch_id, total_files, len(model_endpoints)
+        )
+
+        auditor.save_meta({
+            "template": config.template,
+            "score_target_max": float(config.score_target_max),
+            "mock_mode": config.mock,
+            "models": [{"api_url": m.api_url, "model_name": m.model_name} for m in model_endpoints],
+            "files": [path.name for path in stored_paths],
+        })
+        auditor.log_operation("流式批次初始化完成，准备开始处理文件")
+
+        # 注意：init 事件已在路由层发送，此处不再重复发送
+
+        grade_items: List[GradeItem] = []
+        error_rows: List[dict] = []
+
+        # 使用共享的 _grade_single_file 方法创建任务
+        tasks_map = {
+            asyncio.create_task(self._grade_single_file(p, config, model_endpoints, prompt_config, auditor)): p
+            for p in stored_paths
+        }
+        completed_count = 0
+
+        try:
+            for coro in asyncio.as_completed(tasks_map.keys()):
+                try:
+                    item, error_row = await coro
+                    completed_count += 1
+                    grade_items.append(item)
+                    if error_row:
+                        error_rows.append(error_row)
+
+                    # 发送单项结果事件
+                    yield {
+                        "event": "item",
+                        "data": {
+                            "item": item.model_dump(),
+                            "index": completed_count,
+                        }
+                    }
+
+                    # 发送进度事件
+                    yield {
+                        "event": "progress",
+                        "data": {
+                            "current": completed_count,
+                            "total": total_files,
+                            "percent": round(completed_count * 100 / total_files, 1),
+                        }
+                    }
+
+                except Exception as exc:
+                    completed_count += 1
+                    logger.error("流式处理单文件异常：%s", exc)
+                    yield {
+                        "event": "progress",
+                        "data": {
+                            "current": completed_count,
+                            "total": total_files,
+                            "percent": round(completed_count * 100 / total_files, 1),
+                        }
+                    }
+        finally:
+            # 客户端断开或发生异常时，取消剩余未完成的任务
+            for task in tasks_map.keys():
+                if not task.done():
+                    task.cancel()
+                    try:
+                        await task
+                    except asyncio.CancelledError:
+                        pass
+
+        # 计算统计信息
+        scores = [item.score for item in grade_items if item.score is not None]
+        average_score = round(statistics.mean(scores), 2) if scores else None
+        score_rubric_values = [item.score_rubric for item in grade_items if item.score_rubric is not None]
+        average_score_rubric = round(statistics.mean(score_rubric_values), 2) if score_rubric_values else None
+        rubric_max_values = sorted({float(item.score_rubric_max) for item in grade_items if item.score_rubric_max is not None})
+
+        auditor.log_operation("流式批次处理完毕，准备导出 Excel")
+
+        # 导出 Excel
+        exporter.export_results(
+            [item.model_dump() for item in grade_items],
+            summary={
+                "批次ID": batch_id,
+                "目标满分": float(config.score_target_max),
+                "规则满分（可能多值）": " / ".join(str(v) for v in rubric_max_values) if rubric_max_values else "",
+                "模型列表": "；".join([f"{m.model_name}@{m.api_url}" for m in model_endpoints]) if model_endpoints else "",
+                "聚合算法": "平均分（成功模型）",
+                "多模型总体评语": "启用多模型时，会用主模型二次生成总体评语（JSON）",
+                "并发限制": "文件=5；模型=2/接口；单次超时=300秒；重试=3次",
+                "文件总数": len(grade_items),
+                "成功数": len(scores),
+                "失败数": len(grade_items) - len(scores),
+                "平均分（目标满分制）": average_score if average_score is not None else "",
+                "平均规则分": average_score_rubric if average_score_rubric is not None else "",
+            },
+            error_rows=error_rows,
+        )
+        exporter.export_errors(error_rows)
+
+        # 使用共享的归档方法
+        self._archive_batch(batch_id, batch_dir)
+
+        # 发送完成事件
+        yield {
+            "event": "complete",
+            "data": {
+                "batch_id": batch_id,
+                "total_files": len(grade_items),
+                "success_count": len(scores),
+                "error_count": len(grade_items) - len(scores),
+                "average_score": average_score,
+                "download_result_url": f"/api/download/result/{batch_id}",
+                "download_error_url": f"/api/download/error/{batch_id}",
+            }
+        }
+
+        logger.info(
+            "流式批次完成：%s，总计%d，成功%d，异常%d，平均分%s",
+            batch_id, len(grade_items), len(scores), len(grade_items) - len(scores), average_score
+        )

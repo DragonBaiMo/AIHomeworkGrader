@@ -1,4 +1,16 @@
-import type { GradeConfigPayload, GradeResponse, PromptConfig, RubricGenerateRequest, RubricGenerateResponse } from "./types";
+import type {
+  GradeConfigPayload,
+  GradeResponse,
+  GradeStreamCallbacks,
+  PromptConfig,
+  RubricGenerateRequest,
+  RubricGenerateResponse,
+  SSECompleteEvent,
+  SSEErrorEvent,
+  SSEInitEvent,
+  SSEItemEvent,
+  SSEProgressEvent,
+} from "./types";
 
 const API_PREFIX = "/api";
 
@@ -134,4 +146,153 @@ export async function generateRubric(request: RubricGenerateRequest): Promise<Ru
     throw new Error(message);
   }
   return resp.json();
+}
+
+/**
+ * 构建批改请求的 FormData
+ */
+function buildGradeFormData(files: File[], config: GradeConfigPayload): FormData {
+  const formData = new FormData();
+  files.forEach((file) => formData.append("files", file));
+  formData.append("api_url", config.apiUrl);
+  formData.append("api_key", config.apiKey);
+  formData.append("model_name", config.modelName);
+  if (config.multiEnabled) {
+    const models = (config.models || []).slice(0, 2).map((m) => ({
+      api_url: m.api_url || "",
+      api_key: m.api_key || "",
+      model_name: m.model_name || "",
+    }));
+    if (models.length > 0) {
+      formData.append("models", JSON.stringify(models));
+    }
+  }
+  formData.append("template", config.template);
+  formData.append("mock", String(config.mock));
+  formData.append("skip_format_check", String(config.skipFormatCheck));
+  formData.append("score_target_max", String(config.scoreTargetMax));
+  return formData;
+}
+
+/**
+ * 流式批改接口，通过 SSE 逐个返回批改结果
+ * @returns AbortController 用于取消请求
+ */
+export function gradeHomeworkStream(
+  files: File[],
+  config: GradeConfigPayload,
+  callbacks: GradeStreamCallbacks
+): AbortController {
+  const controller = new AbortController();
+  const formData = buildGradeFormData(files, config);
+
+  // 使用 fetch 发送 POST 请求并处理 SSE 流
+  fetch(`${API_PREFIX}/grade-stream`, {
+    method: "POST",
+    body: formData,
+    signal: controller.signal,
+  })
+    .then(async (response) => {
+      if (!response.ok) {
+        const data = await parseJsonSafe(response);
+        const message = data?.detail || "流式批改请求失败";
+        callbacks.onError({ message, recoverable: false });
+        return;
+      }
+
+      const reader = response.body?.getReader();
+      if (!reader) {
+        callbacks.onError({ message: "无法获取响应流", recoverable: false });
+        return;
+      }
+
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let currentEvent = "";
+      let currentData = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+
+        // 处理可能的 \r\n 换行符
+        buffer = buffer.replace(/\r\n/g, "\n");
+
+        // 按行分割，保留最后一行（可能不完整）放回 buffer
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          const trimmedLine = line.trim();
+
+          if (trimmedLine.startsWith("event:")) {
+            currentEvent = trimmedLine.slice(6).trim();
+          } else if (trimmedLine.startsWith("data:")) {
+            // 支持多行 data（追加）
+            const dataContent = trimmedLine.slice(5).trim();
+            if (currentData) {
+              currentData += "\n" + dataContent;
+            } else {
+              currentData = dataContent;
+            }
+          } else if (trimmedLine === "" && currentData) {
+            // 空行表示事件结束，触发分发
+            try {
+              const data = JSON.parse(currentData);
+              switch (currentEvent) {
+                case "init":
+                  callbacks.onInit(data as SSEInitEvent);
+                  break;
+                case "progress":
+                  callbacks.onProgress(data as SSEProgressEvent);
+                  break;
+                case "item":
+                  callbacks.onItem(data as SSEItemEvent);
+                  break;
+                case "complete":
+                  callbacks.onComplete(data as SSECompleteEvent);
+                  break;
+                case "error":
+                  callbacks.onError(data as SSEErrorEvent);
+                  break;
+                default:
+                  // 未知事件类型，尝试通用处理
+                  console.warn("[SSE] Unknown event type:", currentEvent, data);
+              }
+            } catch (e) {
+              console.error("[SSE] JSON parse error:", e, "data:", currentData);
+            }
+            currentEvent = "";
+            currentData = "";
+          }
+        }
+      }
+      // 流结束后，如果还有未处理的数据，尝试处理
+      if (currentData) {
+        try {
+          const data = JSON.parse(currentData);
+          switch (currentEvent) {
+            case "complete":
+              callbacks.onComplete(data as SSECompleteEvent);
+              break;
+            case "error":
+              callbacks.onError(data as SSEErrorEvent);
+              break;
+          }
+        } catch {
+          // 忽略
+        }
+      }
+    })
+    .catch((err) => {
+      if (err.name === "AbortError") {
+        // 用户主动取消
+        return;
+      }
+      callbacks.onError({ message: err.message || "网络请求失败", recoverable: false });
+    });
+
+  return controller;
 }

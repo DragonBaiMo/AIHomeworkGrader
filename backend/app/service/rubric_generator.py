@@ -33,7 +33,8 @@ RUBRIC_GEN_SYSTEM_PROMPT = """你是一名专业的教育评估专家，擅长�
         {
           "key": "细则名称，如 代码规范",
           "max_score": 20,
-          "description": "详细的评分要求描述，说明如何评判该项"
+          "description": "详细的评分要求描述，说明如何评判该项",
+          "is_deduction": false
         }
       ]
     }
@@ -46,16 +47,22 @@ RUBRIC_GEN_SYSTEM_PROMPT = """你是一名专业的教育评估专家，擅长�
 1. **维度设计**：每个 section 代表一个大的评分维度，通常 3-5 个维度为宜
 2. **细则设计**：每个 item 是具体的评分细则，每个维度下 2-4 个细则
 3. **分数分配**：
-   - 各维度的 max_score 之和必须等于用户指定的总分
-   - 每个维度下各 item 的 max_score 之和必须等于该维度的 max_score
+   - 各维度的 max_score 之和必须等于用户指定的总分（仅计算非扣分项）
+   - 每个维度下各非扣分项 item 的 max_score 之和必须等于该维度的 max_score
 4. **描述要求**：description 应具体、可操作，便于评分时判断
 5. **命名规范**：category_key 使用英文小写+下划线，从描述中提取关键词
+6. **扣分项设计**（可选）：
+   - 如果用户描述中提到了需要扣分的情况（如格式问题、抄袭、迟交等），应添加扣分项
+   - 扣分项设置 `is_deduction: true`，其 max_score 表示最大扣分额度
+   - 扣分项的分数不计入维度总分，而是从最终得分中扣除
+   - 如果用户未提及扣分情况，则无需添加扣分项
 
 ## 注意事项
 
 - 仅输出 JSON，不要有任何解释文字
 - JSON 必须格式正确，可被直接解析
 - 分数必须是数字，不能是字符串
+- is_deduction 字段可选，默认为 false（表示得分项）
 """
 
 RUBRIC_GEN_USER_TEMPLATE = """请根据以下描述生成评分标准：
@@ -140,7 +147,7 @@ def _validate_rubric_structure(rubric: dict[str, Any], expected_total: int) -> l
         errors.append("sections 必须是非空数组")
         return errors
 
-    # 检查总分
+    # 检查总分（仅计算非扣分项）
     total = 0
     for idx, section in enumerate(sections):
         if "key" not in section:
@@ -152,16 +159,21 @@ def _validate_rubric_structure(rubric: dict[str, Any], expected_total: int) -> l
         section_score = section.get("max_score", 0)
         total += section_score
 
-        # 检查 items 分数之和
+        # 检查 items 分数之和（仅计算非扣分项）
         items = section.get("items", [])
         if not isinstance(items, list) or len(items) == 0:
             errors.append(f"维度「{section.get('key', idx + 1)}」的 items 必须是非空数组")
             continue
 
-        items_total = sum(item.get("max_score", 0) for item in items)
+        # 仅对非扣分项求和
+        items_total = sum(
+            item.get("max_score", 0)
+            for item in items
+            if not item.get("is_deduction", False)
+        )
         if abs(items_total - section_score) > 0.01:
             errors.append(
-                f"维度「{section.get('key')}」的细则分数之和 ({items_total}) 不等于维度分数 ({section_score})"
+                f"维度「{section.get('key')}」的非扣分细则分数之和 ({items_total}) 不等于维度分数 ({section_score})"
             )
 
         # 检查 items 必要字段

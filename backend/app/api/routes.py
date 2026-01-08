@@ -9,6 +9,7 @@ from typing import List
 
 from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from sse_starlette.sse import EventSourceResponse, ServerSentEvent
 
 from app.model.schemas import GradeConfig, GradeResponse, ModelEndpoint, RubricGenerateRequest
 from app.service.grading_service import GradingService
@@ -19,6 +20,7 @@ from app.service.prompt_config import (
     save_prompt_config,
     save_prompts_md_sections,
 )
+from app.util.file_utils import generate_batch_id, save_upload_files
 from app.util.logger import logger
 from config.settings import STATIC_DIR
 
@@ -29,6 +31,61 @@ service = GradingService()
 def get_service() -> GradingService:
     """注入批改服务实例。"""
     return service
+
+
+def parse_models_config(
+    models_json: str | None,
+    is_mock: bool,
+) -> tuple[list[ModelEndpoint] | None, str | None]:
+    """解析并校验多模型配置。
+
+    Args:
+        models_json: 多模型配置 JSON 字符串
+        is_mock: 是否为模拟模式
+
+    Returns:
+        tuple[list[ModelEndpoint] | None, str | None]: (解析后的模型列表, 错误信息)
+        如果有错误，返回 (None, 错误信息)；否则返回 (模型列表, None)
+    """
+    if not models_json:
+        return None, None
+
+    try:
+        raw = json.loads(models_json)
+    except json.JSONDecodeError:
+        return None, "多模型配置 JSON 解析失败，请检查格式。"
+
+    if not isinstance(raw, list) or not raw:
+        return None, "多模型配置必须为非空数组。"
+
+    if len(raw) > 2:
+        raw = raw[:2]
+
+    parsed_models = []
+    for idx, item in enumerate(raw, start=1):
+        if not isinstance(item, dict):
+            return None, f"多模型配置第 {idx} 项必须为对象。"
+        try:
+            endpoint = ModelEndpoint(
+                api_url=str(item.get("api_url") or "").strip(),
+                api_key=(str(item.get("api_key")).strip() if item.get("api_key") is not None else None),
+                model_name=str(item.get("model_name") or "").strip(),
+            )
+        except (ValueError, TypeError, KeyError):
+            return None, f"多模型配置第 {idx} 项字段不合法，请检查 api_url/model_name。"
+
+        if not is_mock:
+            if not endpoint.api_url:
+                return None, f"多模型配置第 {idx} 项未填写 api_url。"
+            if not (endpoint.api_url.startswith("http://") or endpoint.api_url.startswith("https://")):
+                return None, f"多模型配置第 {idx} 项 api_url 必须以 http:// 或 https:// 开头。"
+
+        if not endpoint.model_name:
+            return None, f"多模型配置第 {idx} 项未填写 model_name。"
+
+        parsed_models.append(endpoint)
+
+    return parsed_models, None
 
 
 @router.get("/ping")
@@ -53,7 +110,6 @@ async def grade(
     """接收文件并执行批改流程。"""
     if not files:
         raise HTTPException(status_code=400, detail="请至少上传一个作业文件（.docx/.md/.markdown/.txt）")
-    # 前端 FormData 传递布尔值为字符串，需要转换
     is_mock = mock.lower() == "true"
     is_skip_format = skip_format_check.lower() == "true"
     if score_target_max <= 0:
@@ -62,36 +118,10 @@ async def grade(
         if not models and not api_url:
             raise HTTPException(status_code=400, detail="未填写模型接口地址")
 
-    parsed_models: list[ModelEndpoint] | None = None
-    if models:
-        try:
-            raw = json.loads(models)
-        except Exception:  # noqa: BLE001
-            raise HTTPException(status_code=400, detail="多模型配置 JSON 解析失败，请检查格式。")
-        if not isinstance(raw, list) or not raw:
-            raise HTTPException(status_code=400, detail="多模型配置必须为非空数组。")
-        if len(raw) > 2:
-            raw = raw[:2]
-        parsed_models = []
-        for idx, item in enumerate(raw, start=1):
-            if not isinstance(item, dict):
-                raise HTTPException(status_code=400, detail=f"多模型配置第 {idx} 项必须为对象。")
-            try:
-                endpoint = ModelEndpoint(
-                    api_url=str(item.get("api_url") or "").strip(),
-                    api_key=(str(item.get("api_key")).strip() if item.get("api_key") is not None else None),
-                    model_name=str(item.get("model_name") or "").strip(),
-                )
-            except Exception:  # noqa: BLE001
-                raise HTTPException(status_code=400, detail=f"多模型配置第 {idx} 项字段不合法，请检查 api_url/model_name。")
-            if not is_mock:
-                if not endpoint.api_url:
-                    raise HTTPException(status_code=400, detail=f"多模型配置第 {idx} 项未填写 api_url。")
-                if not (endpoint.api_url.startswith("http://") or endpoint.api_url.startswith("https://")):
-                    raise HTTPException(status_code=400, detail=f"多模型配置第 {idx} 项 api_url 必须以 http:// 或 https:// 开头。")
-            if not endpoint.model_name:
-                raise HTTPException(status_code=400, detail=f"多模型配置第 {idx} 项未填写 model_name。")
-            parsed_models.append(endpoint)
+    parsed_models, error_msg = parse_models_config(models, is_mock)
+    if error_msg:
+        raise HTTPException(status_code=400, detail=error_msg)
+
     config = GradeConfig(
         api_url=api_url,
         api_key=api_key,
@@ -112,6 +142,106 @@ async def grade(
         extra_count,
     )
     return await srv.process(files, config)
+
+
+@router.post("/grade-stream")
+async def grade_stream(
+    files: List[UploadFile] = File(..., description="待批改的作业文件"),
+    api_url: str | None = Form(default=None, description="模型接口地址"),
+    api_key: str | None = Form(default=None, description="API 密钥"),
+    model_name: str | None = Form(default=None, description="模型名称"),
+    models: str | None = Form(default=None, description="追加模型配置 JSON（数组，每项包含 api_url/api_key/model_name，最多 2 个）"),
+    template: str = Form(default="auto", description="作业模板类型（auto 为自动识别，否则传分类 key）"),
+    mock: str = Form(default="false", description="是否使用模拟模式"),
+    skip_format_check: str = Form(default="false", description="是否跳过格式检查"),
+    score_target_max: float = Form(default=60.0, description="目标满分（用于将评分规则总分按比例换算）"),
+    srv: GradingService = Depends(get_service),
+) -> EventSourceResponse:
+    """流式批改接口，每完成一个文件立即通过 SSE 推送结果。
+
+    SSE 事件类型:
+    - init: 批次初始化，包含 batch_id 和 total_files
+    - progress: 进度更新，包含 current, total, percent
+    - item: 单个文件批改完成，包含完整的 GradeItem
+    - complete: 全部处理完毕，包含汇总统计和下载链接
+    - error: 致命错误
+    """
+    if not files:
+        async def error_generator():
+            yield {"event": "error", "data": json.dumps({"message": "请至少上传一个作业文件", "recoverable": False}, ensure_ascii=False)}
+        return EventSourceResponse(error_generator())
+
+    is_mock = mock.lower() == "true"
+    is_skip_format = skip_format_check.lower() == "true"
+
+    if score_target_max <= 0:
+        async def error_generator():
+            yield {"event": "error", "data": json.dumps({"message": "目标满分必须大于 0", "recoverable": False}, ensure_ascii=False)}
+        return EventSourceResponse(error_generator())
+
+    if not is_mock:
+        if not models and not api_url:
+            async def error_generator():
+                yield {"event": "error", "data": json.dumps({"message": "未填写模型接口地址", "recoverable": False}, ensure_ascii=False)}
+            return EventSourceResponse(error_generator())
+
+    parsed_models, error_msg = parse_models_config(models, is_mock)
+    if error_msg:
+        async def error_generator():
+            yield {"event": "error", "data": json.dumps({"message": error_msg, "recoverable": False}, ensure_ascii=False)}
+        return EventSourceResponse(error_generator())
+
+    config = GradeConfig(
+        api_url=api_url,
+        api_key=api_key,
+        model_name=model_name,
+        models=parsed_models,
+        template=template,
+        mock=is_mock,
+        skip_format_check=is_skip_format,
+        score_target_max=score_target_max,
+    )
+
+    extra_count = len(parsed_models) if parsed_models else 0
+    logger.info(
+        "收到流式批改请求：文件数=%d，模板=%s，模拟模式=%s，跳过格式检查=%s，追加模型数=%d",
+        len(files),
+        template,
+        is_mock,
+        is_skip_format,
+        extra_count,
+    )
+
+    # 关键：在返回 SSE 响应之前先保存文件，避免 UploadFile 在生成器执行时已关闭
+    batch_id = generate_batch_id()
+    try:
+        batch_dir, stored_paths = save_upload_files(batch_id, files)
+    except Exception as exc:
+        async def error_generator():
+            yield {"event": "error", "data": json.dumps({"message": f"文件保存失败：{exc}", "recoverable": False}, ensure_ascii=False)}
+        return EventSourceResponse(error_generator())
+
+    if not stored_paths:
+        async def error_generator():
+            yield {"event": "error", "data": json.dumps({"message": "没有有效的文件可处理", "recoverable": False}, ensure_ascii=False)}
+        return EventSourceResponse(error_generator())
+
+    async def event_generator():
+        # 先发送 init 事件
+        yield ServerSentEvent(
+            event="init",
+            data=json.dumps({"batch_id": batch_id, "total_files": len(stored_paths)}, ensure_ascii=False),
+        )
+        # 使用已保存的文件路径进行流式处理
+        async for event in srv.process_stream_from_saved(batch_id, batch_dir, stored_paths, config):
+            event_type = event.get("event", "message")
+            event_data = event.get("data", {})
+            yield ServerSentEvent(
+                event=event_type,
+                data=json.dumps(event_data, ensure_ascii=False),
+            )
+
+    return EventSourceResponse(event_generator(), ping=0)
 
 
 @router.get("/download/{file_type}/{batch_id}")
